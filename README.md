@@ -60,7 +60,7 @@ Exposes tools for full agentic control:
 mcp_servers:
   finance:
     command: uv
-    args: ["run", "--directory", "/home/luanb/personal-finance-ingest", "finance-mcp"]
+    args: ["run", "--directory", "/home/luanb/development/personal-finance-ingest", "finance-mcp"]
 ```
 
 Or after install: `command: finance-mcp`.
