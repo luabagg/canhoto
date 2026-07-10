@@ -1,0 +1,10 @@
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+*.egg-info/
+.pytest_cache/
+.finance-ingest/
+*.db

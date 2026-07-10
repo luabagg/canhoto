@@ -1,0 +1,224 @@
+
+--- Page 1/3 ---
+
+1/3
+EXTRATO DE CONTA
+Luan Baggio
+CPF/CNPJ: 02337996050
+ 1
+ 86385691795
+Agência:
+Conta:
+ De 01-06-2026 al 30-06-2026
+Periodo:
+Saldo inicial: R$ 0,00
+Entradas: R$ 11.774,77
+Saidas: R$ -11.774,77
+DETALHE DOS MOVIMENTOS
+Data
+Descrição
+ID da operação
+Valor
+Saldo
+02-06-2026
+Pix recebido LUAN BAGGIO
+161448944237
+R$ 1.442,69
+R$ 1.442,69
+02-06-2026
+Dinheiro reservado piggy
+162244977620
+R$ -259,51
+R$ 1.183,18
+03-06-2026
+Pagamento de conta EDIFICIO 
+MONREALE
+162266544436
+R$ -403,36
+R$ 779,82
+03-06-2026
+Pagamento de conta STAR 
+PROTECAO VEICULAR
+162266526696
+R$ -184,25
+R$ 595,57
+03-06-2026
+Pagamento de conta VIA SUL 
+PROVEDOR DE ACESSO A 
+INTERNET LTDA - ME
+162266458052
+R$ -99,90
+R$ 495,67
+03-06-2026
+Pagamento com QR Pix RGE 
+SUL DISTRIBUIDORA DE 
+ENERGIA S.A
+162266558428
+R$ -457,10
+R$ 38,57
+03-06-2026
+Rendimentos
+1744699566467
+R$ 0,02
+R$ 38,59
+03-06-2026
+Pix enviado Luan Baggio
+162380524744
+R$ -37,40
+R$ 1,19
+07-06-2026
+Dinheiro retirado piggy
+162249526817
+R$ 3.606,00
+R$ 3.607,19
+07-06-2026
+Pix enviado Luan Baggio
+163049660992
+R$ -1.780,00
+R$ 1.827,19
+Saldo final: R$ 0,00
+
+
+--- Page 2/3 ---
+
+2/3
+Data
+Descrição
+ID da operação
+Valor
+Saldo
+07-06-2026
+Pagamento Cartão de crédito
+163050560780
+R$ -1.807,92
+R$ 19,27
+08-06-2026
+Rendimentos
+1744895334438
+R$ 0,01
+R$ 19,28
+08-06-2026
+Dinheiro retirado piggy
+163121679700
+R$ 424,76
+R$ 444,04
+08-06-2026
+Pix enviado LINKED STORE 
+BRASIL HOSPEDAGEM DE 
+SITES E DESENVOLVIMENTO 
+DE SOFTWARES...
+163121806258
+R$ -85,36
+R$ 358,68
+09-06-2026
+Rendimentos
+1744987689547
+R$ 0,16
+R$ 358,84
+09-06-2026
+Pagamento Alvi azul ltda
+162514563791
+R$ -3,99
+R$ 354,85
+09-06-2026
+Pix recebido ELIANE PIRES 
+00250501090
+162526115571
+R$ 200,00
+R$ 554,85
+09-06-2026
+Dinheiro retirado piggy
+163388713146
+R$ 1.000,00
+R$ 1.554,85
+09-06-2026
+Pix enviado Luan Baggio
+163388080932
+R$ -690,00
+R$ 864,85
+09-06-2026
+Pix enviado Henrique 
+Dallarosa
+163387201946
+R$ -660,00
+R$ 204,85
+10-06-2026
+Rendimentos
+1745044614343
+R$ 0,09
+R$ 204,94
+11-06-2026
+Rendimentos
+1745118984332
+R$ 0,09
+R$ 205,03
+12-06-2026
+Rendimentos
+1745183204985
+R$ 0,09
+R$ 205,12
+14-06-2026
+Pix recebido LUAN BAGGIO
+163271134307
+R$ 100,67
+R$ 305,79
+Pagamento Bentosul 
+
+
+--- Page 3/3 ---
+
+Data de geração: 10-07-2026
+Você tem alguma dúvida? Conte com o nosso Portal de ajuda para encontrar informações sobre nossos produtos e serviços. Se deseja falar com 
+o nosso SAC, ligue para 0800 637 7246. Você precisará de um código de atendimento para nos contatar. Se já nos contatou e precisa de ajuda 
+da ouvidoria, ligue para 0800 688 4365 com o protocolo do primeiro atendimento.
+Mercado Pago Instituição de Pagamento Ltda. CNPJ n.º 10.573.521/0001-91. Av. das Nações Unidas, nº 3.003, Bonfim, Osasco SP - CEP 06233-
+903. Encontre nossos canais de consulta em:www.mercadopago.com.br
+3/3
+Data
+Descrição
+ID da operação
+Valor
+Saldo
+14-06-2026
+distribuidor
+163274581707
+R$ -192,83
+R$ 112,96
+15-06-2026
+Rendimentos
+1745245582007
+R$ 0,05
+R$ 113,01
+16-06-2026
+Rendimentos
+1745303288142
+R$ 0,05
+R$ 113,06
+17-06-2026
+Rendimentos
+1745376450091
+R$ 0,05
+R$ 113,11
+17-06-2026
+Pix enviado Guilherme Cusin 
+Salvati
+164592140068
+R$ -18,28
+R$ 94,83
+18-06-2026
+Rendimentos
+1745437126227
+R$ 0,04
+R$ 94,87
+18-06-2026
+Pix recebido Thermal 
+Aquecimento Ltda
+164756707700
+R$ 5.000,00
+R$ 5.094,87
+18-06-2026
+Dinheiro reservado piggy
+163939779319
+R$ -5.094,87
+R$ 0,00
+
