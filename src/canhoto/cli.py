@@ -7,6 +7,8 @@ Package console scripts land in Phase 7. Until then, invoke via::
     python -m canhoto.cli parsers list
     python -m canhoto.cli ingest path/to/statement.txt
     python -m canhoto.cli parse path/to/statement.txt
+    python -m canhoto.cli review --month YYYY-MM --json
+    python -m canhoto.cli categorize apply --file patches.json
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import argparse
 import json
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Sequence
 
 from canhoto import service
@@ -101,6 +104,32 @@ def build_parser() -> argparse.ArgumentParser:
 
     parsers_sub.add_parser("list", help="List registered parsers and test/enable status")
 
+    review_p = sub.add_parser(
+        "review",
+        help="Fetch a redacted pending-review batch for a month (YYYY-MM)",
+    )
+    review_p.add_argument(
+        "--month",
+        required=True,
+        help="Target month as YYYY-MM",
+    )
+    review_p.add_argument(
+        "--cursor",
+        default=None,
+        help="Pagination cursor (last item id from previous page)",
+    )
+    review_p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Max items (clamped by agent-view batch caps)",
+    )
+    review_p.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit JSON (default and currently only output mode)",
+    )
+
     cat_p = sub.add_parser("categorize", help="Classify ledger rows")
     cat_sub = cat_p.add_subparsers(dest="categorize_cmd", required=True)
     rules_p = cat_sub.add_parser(
@@ -111,6 +140,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--month",
         required=True,
         help="Target month as YYYY-MM",
+    )
+    apply_p = cat_sub.add_parser(
+        "apply",
+        help="Apply classification patches from a JSON file",
+    )
+    apply_p.add_argument(
+        "--file",
+        required=True,
+        dest="patches_file",
+        help="Path to JSON list of classification patches",
     )
 
     return parser
@@ -135,6 +174,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.cmd == "parsers":
         return _run_parsers(args)
+    if args.cmd == "review":
+        return _run_service_cmd(
+            lambda: service.review_batch(
+                args.month,
+                cursor=args.cursor,
+                limit=args.limit,
+            )
+        )
     if args.cmd == "categorize":
         return _run_categorize(args)
 
@@ -203,10 +250,25 @@ def _run_parsers(args: argparse.Namespace) -> int:
 def _run_categorize(args: argparse.Namespace) -> int:
     if args.categorize_cmd == "rules":
         return _run_service_cmd(lambda: service.run_rules(args.month))
+    if args.categorize_cmd == "apply":
+        return _run_service_cmd(lambda: _load_and_set_categories(args.patches_file))
     _print_json(
         {"ok": False, "error": f"unknown categorize command: {args.categorize_cmd}"}
     )
     return 2
+
+
+def _load_and_set_categories(patches_file: str) -> dict[str, Any]:
+    path = Path(patches_file).expanduser()
+    if not path.is_file():
+        raise FileNotFoundError(f"patches file not found: {path}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid patches JSON: {exc}") from exc
+    if not isinstance(payload, list):
+        raise ValueError("patches file must contain a JSON list")
+    return service.set_categories(payload)
 
 
 if __name__ == "__main__":

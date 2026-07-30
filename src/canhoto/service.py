@@ -16,9 +16,10 @@ from typing import Any, Literal, Sequence
 from canhoto.core import categorize as core_categorize
 from canhoto.core import config as core_config
 from canhoto.core import store as core_store
-from canhoto.core.models import ParserEntry, StatementRecord
+from canhoto.core.models import ClassificationPatch, ParserEntry, StatementRecord
 from canhoto.core.pdf_text import extract_text
-from canhoto.core.policy import clamp_batch_size
+from canhoto.core.policy import assert_month, clamp_batch_size
+from canhoto.core.redaction import to_review_item
 from canhoto.parsers import loader as parser_loader
 from canhoto.parsers import scaffold as parser_scaffold_mod
 from canhoto.parsers.loader import ParserLoadError, ParserNotFoundError
@@ -645,3 +646,99 @@ def run_rules(
         "data_dir": str(data_dir.resolve()),
         "db_path": str(db_file),
     }
+
+# --- Review batches + category patches ---
+
+
+def review_batch(
+    month: str,
+    cursor: str | None = None,
+    limit: int | None = None,
+    *,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Return a capped, redacted pending-review batch for ``month`` (YYYY-MM).
+
+    Uses Phase 0 policy (``assert_month``, ``clamp_batch_size``) and redaction
+    (``to_review_item`` only). Default queue is pending review; when
+    ``agent_view.expense_only`` is true (default), only expense rows are included.
+
+    ``cursor`` is the last item id from a previous page (keyset pagination).
+    Never returns raw ledger fields.
+    """
+    month_value = assert_month(month)
+    data_dir = _ensure_data_dir(root)
+    cfg = core_config.load_config(data_dir)
+    if not cfg.agent_view.allow_review_items:
+        raise PermissionError("review_batch refused: agent_view.allow_review_items is false")
+
+    batch_limit = clamp_batch_size(limit, cfg.agent_view)
+    db_file = core_config.db_path(data_dir)
+    core_store.ensure_schema(db_file)
+
+    # Fetch one extra row to detect a following page without exposing total dumps.
+    fetch_limit = batch_limit + 1
+    txs = core_store.list_transactions(
+        month=month_value,
+        needs_review=True,
+        is_expense=True if cfg.agent_view.expense_only else None,
+        after_id=cursor,
+        limit=fetch_limit,
+        path=db_file,
+    )
+    page = txs[:batch_limit]
+    has_more = len(txs) > batch_limit
+    items = [to_review_item(tx, cfg.agent_view).model_dump(mode="json") for tx in page]
+    next_cursor = page[-1].id if has_more and page else None
+
+    out: dict[str, Any] = {
+        "ok": True,
+        "month": month_value,
+        "items": items,
+        "count": len(items),
+        "limit": batch_limit,
+        "expense_only": cfg.agent_view.expense_only,
+        "data_dir": str(data_dir.resolve()),
+        "db_path": str(db_file),
+    }
+    if next_cursor is not None:
+        out["next_cursor"] = next_cursor
+    elif cursor is not None:
+        # Explicit null when a page was requested and there is no successor.
+        out["next_cursor"] = None
+    return out
+
+
+def set_categories(
+    patches: list[dict[str, Any]],
+    *,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Apply classification patches via ``store.apply_classifications``.
+
+    Each patch is a dict accepted by ``ClassificationPatch``. Missing ids are
+    reported; never returns ledger rows.
+    """
+    if not isinstance(patches, list):
+        raise ValueError("patches must be a list of objects")
+
+    data_dir = _ensure_data_dir(root)
+    db_file = core_config.db_path(data_dir)
+    core_store.ensure_schema(db_file)
+
+    parsed: list[ClassificationPatch] = []
+    for i, raw in enumerate(patches):
+        if not isinstance(raw, dict):
+            raise ValueError(f"patches[{i}] must be an object")
+        parsed.append(ClassificationPatch.model_validate(raw))
+
+    result = core_store.apply_classifications(parsed, path=db_file)
+    return {
+        "ok": True,
+        "applied": result.applied,
+        "missing": list(result.missing),
+        "count": len(parsed),
+        "data_dir": str(data_dir.resolve()),
+        "db_path": str(db_file),
+    }
+

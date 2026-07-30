@@ -409,10 +409,17 @@ def list_transactions(
     month: str | None = None,
     needs_review: bool | None = None,
     source_kind: str | None = None,
+    is_expense: bool | None = None,
+    after_id: str | None = None,
     limit: int = 500,
     path: Path | None = None,
 ) -> list[LedgerTransaction]:
-    """List ledger rows with optional filters. Always ordered and limited."""
+    """List ledger rows with optional filters. Always ordered and limited.
+
+    ``after_id`` implements keyset pagination on ``(date, id)`` using the
+    stored row for that id as the exclusive lower bound. Unknown ``after_id``
+    raises ``ValueError``.
+    """
     if limit <= 0:
         raise ValueError("limit must be a positive integer")
     clauses: list[str] = []
@@ -426,6 +433,19 @@ def list_transactions(
     if source_kind is not None:
         clauses.append("source_kind = ?")
         args.append(source_kind)
+    if is_expense is not None:
+        clauses.append("is_expense = ?")
+        args.append(1 if is_expense else 0)
+    if after_id is not None:
+        with connect(path) as conn:
+            cursor_row = conn.execute(
+                "SELECT date, id FROM transactions WHERE id = ?",
+                (after_id,),
+            ).fetchone()
+        if cursor_row is None:
+            raise ValueError(f"unknown review cursor id: {after_id!r}")
+        clauses.append("(date > ? OR (date = ? AND id > ?))")
+        args.extend([cursor_row["date"], cursor_row["date"], cursor_row["id"]])
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     sql = f"SELECT * FROM transactions {where} ORDER BY date ASC, id ASC LIMIT ?"
     args.append(limit)
