@@ -118,6 +118,14 @@ class MonthBreakdown(BaseModel):
     expense_count: int
 
 
+class ReportBundle(BaseModel):
+    """In-memory report payload for exporters (summary PDF v1)."""
+
+    breakdown: MonthBreakdown
+    generated_at: str
+    title: str
+
+
 # --- Concrete ledger / store DTOs (internal; not agent projections) ---
 
 _DEFAULT_MINOR_EXPONENT = 2

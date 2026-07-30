@@ -10,6 +10,7 @@ Package console scripts land in Phase 7. Until then, invoke via::
     python -m canhoto.cli review --month YYYY-MM --json
     python -m canhoto.cli categorize apply --file patches.json
     python -m canhoto.cli breakdown --month YYYY-MM
+    python -m canhoto.cli export pdf YYYY-MM
 """
 
 from __future__ import annotations
@@ -178,6 +179,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target month as YYYY-MM",
     )
 
+    export_p = sub.add_parser("export", help="Export projections (summary PDF v1)")
+    export_sub = export_p.add_subparsers(dest="export_cmd", required=True)
+    export_pdf_p = export_sub.add_parser(
+        "pdf",
+        help="Write month summary PDF to data-dir/exports/YYYY-MM-summary.pdf",
+    )
+    export_pdf_p.add_argument(
+        "month",
+        help="Target month as YYYY-MM",
+    )
+
     return parser
 
 
@@ -212,6 +224,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_categorize(args)
     if args.cmd == "breakdown":
         return _run_service_cmd(lambda: service.month_breakdown(args.month))
+    if args.cmd == "export":
+        if args.export_cmd == "pdf":
+            return _run_service_cmd(lambda: service.export_pdf(args.month))
+        _print_json({"ok": False, "error": f"unknown export command: {args.export_cmd}"})
+        return 2
 
     parser.error(f"unknown command: {args.cmd}")
     return 2

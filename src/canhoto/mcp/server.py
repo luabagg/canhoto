@@ -135,7 +135,7 @@ def _register_tools(server: MCPServer[Any]) -> None:
 
     @server.tool()
     def export_pdf(month: str) -> dict[str, Any]:
-        """Export month summary PDF (Phase 6 — not ready yet)."""
+        """Export month summary PDF (metrics + category totals only)."""
         return service.export_pdf(month)
 
     @server.tool()

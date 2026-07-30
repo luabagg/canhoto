@@ -128,4 +128,4 @@ def test_month_breakdown_required_shape() -> None:
         expense_count=8,
     )
     assert breakdown.by_category["Eating"] == "50.00"
-    assert "transactions" not in breakdown.model_fields
+    assert "transactions" not in MonthBreakdown.model_fields

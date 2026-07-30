@@ -17,10 +17,16 @@ from canhoto.core import breakdown as core_breakdown
 from canhoto.core import categorize as core_categorize
 from canhoto.core import config as core_config
 from canhoto.core import store as core_store
-from canhoto.core.models import ClassificationPatch, ParserEntry, StatementRecord
+from canhoto.core.models import (
+    ClassificationPatch,
+    ParserEntry,
+    ReportBundle,
+    StatementRecord,
+)
 from canhoto.core.pdf_text import extract_text
 from canhoto.core.policy import assert_month, clamp_batch_size
 from canhoto.core.redaction import to_review_item
+from canhoto.exporters.pdf_summary import PdfSummaryExporter
 from canhoto.parsers import loader as parser_loader
 from canhoto.parsers import scaffold as parser_scaffold_mod
 from canhoto.parsers.loader import ParserLoadError, ParserNotFoundError
@@ -870,25 +876,49 @@ def export_pdf(
     *,
     root: Path | None = None,
 ) -> dict[str, Any]:
-    """Placeholder until Phase 6 implements summary PDF export.
+    """Build month aggregates and write a summary PDF under ``exports/``.
 
-    Registered on the MCP allowlist now so tool list == allowlist. Returns a
-    structured error payload (does not raise) so agents can handle it cleanly.
+    Path is always ``{data_dir}/exports/{month}-summary.pdf``. Never includes
+    a full transaction listing — metrics + category totals only.
     """
-    # Validate month early so callers still get a useful shape when ready.
-    try:
-        month_value = assert_month(month)
-    except ValueError:
-        return {
-            "ok": False,
-            "error": "export_pdf_not_ready",
-            "month": month,
-        }
-
+    month_value = assert_month(month)
     data_dir = _ensure_data_dir(root)
+    cfg = core_config.load_config(data_dir)
+    if not cfg.agent_view.allow_aggregates:
+        raise PermissionError(
+            "export_pdf refused: agent_view.allow_aggregates is false"
+        )
+
+    db_file = core_config.db_path(data_dir)
+    core_store.ensure_schema(db_file)
+    txs = core_store.list_transactions(
+        month=month_value,
+        limit=core_breakdown.DEFAULT_MONTH_LIMIT,
+        path=db_file,
+    )
+    breakdown = core_breakdown.compute_month_breakdown(month_value, txs)
+    generated_at = _utc_now_iso()
+    bundle = ReportBundle(
+        breakdown=breakdown,
+        generated_at=generated_at,
+        title=f"Canhoto summary — {month_value}",
+    )
+
+    exports_dir = (data_dir / "exports").resolve()
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    dest = (exports_dir / f"{month_value}-summary.pdf").resolve()
+    if exports_dir not in dest.parents and dest.parent != exports_dir:
+        raise RuntimeError("export path escaped exports directory")
+
+    written = PdfSummaryExporter().export(bundle, dest)
+    size = written.stat().st_size
+    if size <= 0:
+        raise RuntimeError("export produced empty PDF")
+
     return {
-        "ok": False,
-        "error": "export_pdf_not_ready",
+        "ok": True,
         "month": month_value,
+        "path": str(written),
+        "size": size,
         "data_dir": str(data_dir.resolve()),
     }
