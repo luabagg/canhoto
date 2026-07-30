@@ -10,8 +10,8 @@ Portable accounting intent (architecture §9):
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from decimal import Decimal
-from typing import Iterable
 
 from canhoto.core.models import LedgerTransaction, MonthBreakdown
 

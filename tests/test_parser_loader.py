@@ -6,13 +6,12 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-
 from canhoto.core.config import init_data_dir, load_config, save_config
 from canhoto.core.models import (
     AppConfig,
     LedgerTransaction,
-    ParseResult,
     ParserEntry,
+    ParseResult,
     StatementMeta,
     StatementType,
 )

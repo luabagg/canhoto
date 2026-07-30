@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
-
 from canhoto.core.models import AgentViewConfig
 from canhoto.core.policy import assert_month, clamp_batch_size
+from pydantic import ValidationError
 
 
 def test_assert_month_rejects_empty() -> None:

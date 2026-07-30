@@ -7,15 +7,15 @@ paths, operation ids, balances, account ids, metadata bags).
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, field_validator
 
 
-class StatementType(str, Enum):
+class StatementType(StrEnum):
     ACCOUNT = "account"
     CARD = "card"
 
@@ -24,23 +24,26 @@ class Transaction(Protocol):
     """Structural ledger row shape consumed by agent-view redaction.
 
     Not a concrete SQLite/store model. Attributes match exactly what
-    ``merchant_display`` / ``to_review_item`` read; concrete ledger types
-    land in later core/store work and should satisfy this protocol.
+    ``merchant_display`` / ``to_review_item`` read. Members are typed ``Any``
+    (read via getattr) so concrete ledger rows with required ``str``/``float``
+    fields and a read-only ``amount`` property remain structurally compatible.
     """
 
     id: Any
-    date: date | datetime | str | Any
-    amount: Decimal | int | float | str | None | Any
-    currency: str | None | Any
-    merchant_normalized: str | None | Any
-    merchant_raw: str | None | Any
+    date: Any
+    currency: Any
+    merchant_normalized: Any
+    merchant_raw: Any
     source_kind: Any
-    institution: str | None | Any
-    category: str | None | Any
-    kind: str | None | Any
-    confidence: float | int | None | Any
-    review_reason: str | None | Any
-    installment: str | None | Any
+    institution: Any
+    category: Any
+    kind: Any
+    confidence: Any
+    review_reason: Any
+    installment: Any
+
+    @property
+    def amount(self) -> Any: ...
 
 
 class AgentViewConfig(BaseModel):

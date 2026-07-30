@@ -43,12 +43,12 @@ def to_review_item(tx: Transaction, view: AgentViewConfig) -> ReviewItem:
         institution = None
 
     return ReviewItem(
-        id=_as_text(getattr(tx, "id")),
-        date=_format_date(getattr(tx, "date")),
+        id=_as_text(tx.id),
+        date=_format_date(tx.date),
         amount=amount,
         currency=_as_text(getattr(tx, "currency", None) or "BRL"),
         merchant_display=merchant_display(tx),
-        source_kind=_as_text(getattr(tx, "source_kind")),
+        source_kind=_as_text(tx.source_kind),
         institution=institution,
         current_category=_as_text(getattr(tx, "category", "") or ""),
         current_kind=_as_text(getattr(tx, "kind", "") or ""),

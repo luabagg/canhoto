@@ -9,9 +9,10 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
-from datetime import datetime, timezone
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Sequence
+from typing import Any, Literal
 
 from canhoto.core import breakdown as core_breakdown
 from canhoto.core import categorize as core_categorize
@@ -608,7 +609,7 @@ def _read_sample_text(sample: Path) -> str:
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
     )
 

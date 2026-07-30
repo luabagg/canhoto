@@ -7,12 +7,11 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-
+from canhoto import service
 from canhoto.cli import main as cli_main
 from canhoto.core import config as core_config
 from canhoto.core.models import LedgerTransaction, MonthBreakdown
 from canhoto.core.store import ensure_schema, upsert_transactions
-from canhoto import service
 
 
 @pytest.fixture
@@ -70,8 +69,22 @@ def test_month_breakdown_aggregates_only(data_home: Path) -> None:
         data_home,
         [
             # Card spend — counts as expense
-            _tx("e1", day=1, amount_minor=-5000, category="Eating", kind="expense", is_expense=True),
-            _tx("e2", day=2, amount_minor=-20050, category="Groceries", kind="expense", is_expense=True),
+            _tx(
+                "e1",
+                day=1,
+                amount_minor=-5000,
+                category="Eating",
+                kind="expense",
+                is_expense=True,
+            ),
+            _tx(
+                "e2",
+                day=2,
+                amount_minor=-20050,
+                category="Groceries",
+                kind="expense",
+                is_expense=True,
+            ),
             # Income
             _tx(
                 "i1",

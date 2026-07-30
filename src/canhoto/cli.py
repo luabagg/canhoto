@@ -18,9 +18,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from canhoto import service
 from canhoto.parsers.loader import ParserLoadError, ParserNotFoundError

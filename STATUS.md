@@ -2,44 +2,48 @@
 
 **Canonical design:** `docs/ARCHITECTURE.md`  
 **Implementation plan:** `docs/superpowers/plans/2026-07-29-engine-mcp-pdf-redesign.md`  
-**Agent bootstrap:** `AGENTS.md` (**read Day-1 reality first**)  
-**Legacy code map:** `docs/ARCHIVE_BRANCH.md`
+**Agent bootstrap:** `AGENTS.md`  
+**Migration / archive:** `docs/MIGRATION.md`, `docs/ARCHIVE_BRANCH.md`
 
-## Name (target)
+## Name
 
 | | |
 |---|---|
 | Product | **Canhoto** (stub/counterfoil you keep) |
+| Package | `canhoto` |
 | CLI | `canhoto` |
 | MCP | `canhoto-mcp` |
 | Data | `~/.canhoto` / `$CANHOTO_DATA_DIR` |
 
-## Dual state (important)
+## Runtime status
 
-| | On `main` **now** |
+**Canhoto runtime is implemented** under `src/canhoto/` with guardrails, plugin parsers, SQLite ledger, categorization, MCP domain tools, and summary PDF export.
+
+| Layer | Status |
 |---|---|
-| Docs | Canhoto architecture + phased plan |
-| Runtime | Legacy MVP: `src/finance_ingest/`, scripts `finance` / `finance-mcp` |
-| Redesign code | **Not started** (no `src/canhoto/`, no `tests/guardrails/`) |
+| Phase 0 guardrails / contracts | Done (`tests/guardrails/`) |
+| Phase 1 config / store / init / doctor | Done |
+| Phase 2 parser port (scaffold/test/enable) | Done |
+| Phase 3 ingest + CLI parse dry-run | Done |
+| Phase 4 categorize / review / breakdown | Done |
+| Phase 5 MCP allowlisted tools | Done |
+| Phase 6 summary PDF | Done |
+| Phase 7 package scripts + CI + docs | Done |
 
-Agents: architecture wins; legacy is scaffolding to replace. Details in `AGENTS.md`.
+Legacy `src/finance_ingest/` may remain in-tree as reference only — **not** shipped by the `canhoto` wheel. Prefer archive branch + data-dir plugins for bank parsers.
 
 ## Branches
 
 | Branch | Meaning |
 |---|---|
-| `main` | Canhoto docs + legacy MVP source — implement redesign here |
-| `archive/2026-07-29-pre-engine-redesign` | Frozen richer WIP (Itaú, Sheets OAuth, expanded tests) — reference only |
+| `main` | Canhoto product |
+| `archive/2026-07-29-pre-engine-redesign` | Frozen richer WIP — reference only |
 
-## Direction
+## Verify
 
-- Distributable CLI + host-spawned MCP  
-- User/agent Python statement parsers in data dir  
-- SQLite ledger; summary PDF v1; Sheets later as exporter plugin  
-- Agent loop: preview → parser → ingest → categorize → breakdown → PDF  
-- Guardrails first (Phase 0)  
-- Country-agnostic core; locale defaults are config  
-
-## Disk path
-
-Project directory may be `~/development/canhoto` (renamed folder). Git history may still say `personal-finance-ingest`.
+```bash
+uv sync --extra dev
+uv run pytest -q
+uv run canhoto --help
+uv run canhoto-mcp --help  # or: python -m canhoto.mcp
+```

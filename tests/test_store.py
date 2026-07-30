@@ -162,7 +162,9 @@ def test_statement_upsert_and_link_idempotent(tmp_path: Path) -> None:
     assert r2.created is False
 
     with sqlite3.connect(path) as conn:
-        rows = conn.execute("SELECT content_hash, source_file, meta_json FROM statements").fetchall()
+        rows = conn.execute(
+            "SELECT content_hash, source_file, meta_json FROM statements"
+        ).fetchall()
         assert len(rows) == 1
         assert rows[0][0] == "hash-abc"
         assert rows[0][1] == "/moved/july.pdf"

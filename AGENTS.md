@@ -8,26 +8,19 @@ You are implementing **Canhoto**, a local personal finance engine. Read this fil
 
 ## STOP — Day-1 reality (read before anything else)
 
-This repo is in a **deliberate dual state**. If you ignore this section you will thrash.
+**Canhoto runtime is the product.** Primary code lives in `src/canhoto/` with console scripts `canhoto` / `canhoto-mcp`.
 
-| Layer | What exists **today** on `main` | What docs describe as **target** |
-|---|---|---|
-| Product name | Still `personal-finance-ingest` in `pyproject.toml` | **Canhoto** |
-| Python package | `src/finance_ingest/` only | `src/canhoto/` |
-| CLI script | `finance` | `canhoto` |
-| MCP script | `finance-mcp` | `canhoto-mcp` |
-| Data dir (legacy code) | `~/.finance-ingest` / `FINANCE_DATA_DIR` | `~/.canhoto` / `CANHOTO_DATA_DIR` |
-| Parsers | Hardcoded Mercado Pago account+card in package | User/agent plugins in data dir; no required builtins |
-| Sheets | `sheets.py` in tree | **Out of core** (future exporter only) |
-| Guardrails / `tests/guardrails/` | **Missing** | Phase 0 of the plan |
-| Summary PDF exporter | **Missing** | Phase 6 |
-| Canhoto redesign | **Docs only** (this file, ARCHITECTURE, plan) | Full runtime |
+| Layer | On `main` now |
+|---|---|
+| Product / package | **Canhoto** / `canhoto` |
+| CLI / MCP | `canhoto` / `canhoto-mcp` |
+| Data dir | `~/.canhoto` / `$CANHOTO_DATA_DIR` |
+| Parsers | User/agent plugins in data dir (see `examples/parsers/`) |
+| Guardrails | `tests/guardrails/` |
+| PDF | Summary exporter (`export pdf`) |
+| Legacy | `src/finance_ingest/` may remain as **reference only** — not shipped |
 
-**Source of truth for what to build:** `docs/ARCHITECTURE.md` + the implementation plan.  
-**Not source of truth:** behavior of existing `src/finance_ingest/*` (legacy MVP scaffolding).
-
-**Your job is not** “make the old CLI keep working as-is.”  
-**Your job is** execute the plan (Phase 0 → 7), replacing/migrating legacy code until runtime matches Canhoto.
+**Source of truth:** `docs/ARCHITECTURE.md` + plan. Prefer deleting leftover legacy modules over dual-maintaining them.
 
 Repo path on disk may be `~/development/canhoto` while git history still mentions `personal-finance-ingest`. Fine.
 

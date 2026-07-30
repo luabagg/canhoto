@@ -6,7 +6,6 @@ import shutil
 from pathlib import Path
 
 import pytest
-
 from canhoto import service
 from canhoto.core import config as core_config
 from canhoto.core import store as core_store

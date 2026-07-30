@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from canhoto.core.config import (
     config_path,
     db_path,

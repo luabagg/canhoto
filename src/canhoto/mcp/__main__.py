@@ -1,6 +1,4 @@
-"""Allow ``python -m canhoto.mcp.server`` and ``python -m canhoto.mcp``."""
-
-from __future__ import annotations
+"""``python -m canhoto.mcp`` entry — host-spawned MCP stdio server."""
 
 from canhoto.mcp.server import main
 

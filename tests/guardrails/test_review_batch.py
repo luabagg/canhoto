@@ -6,11 +6,10 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-
+from canhoto import service
 from canhoto.core import config as core_config
 from canhoto.core.models import AgentViewConfig, LedgerTransaction, ReviewItem
 from canhoto.core.store import ensure_schema, upsert_transactions
-from canhoto import service
 
 FORBIDDEN_REVIEW_FIELDS = {
     "description",

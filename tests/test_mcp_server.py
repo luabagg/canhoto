@@ -6,7 +6,6 @@ import asyncio
 from pathlib import Path
 
 import pytest
-
 from canhoto.core.config import init_data_dir, load_config, save_config
 from canhoto.mcp.allowlist import MCP_TOOL_ALLOWLIST, MCP_TOOL_DENYLIST
 from canhoto.mcp.server import _INSTRUCTIONS, create_server, registered_tool_names
@@ -80,9 +79,8 @@ def test_statement_preview_truncates(data_home: Path) -> None:
 
 
 def test_parser_write_blocked_when_allow_parser_writes_false(data_home: Path) -> None:
-    from mcp.server.mcpserver.exceptions import ToolError
-
     from canhoto import service
+    from mcp.server.mcpserver.exceptions import ToolError
 
     service.parser_scaffold(
         "demo_card",

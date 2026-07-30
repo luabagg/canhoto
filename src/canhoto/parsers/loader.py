@@ -14,10 +14,9 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from types import ModuleType
-from typing import Iterable
 
 from canhoto.core.config import get_data_dir
 from canhoto.core.models import AppConfig, ParserEntry
@@ -186,7 +185,7 @@ def _instantiate_parser(
     # Prefer config id consistency when plugin forgets to set id.
     if getattr(parser, "id", None) in (None, ""):
         try:
-            parser.id = entry_id  # type: ignore[attr-defined]
+            parser.id = entry_id
         except Exception:  # noqa: BLE001
             pass
-    return parser  # type: ignore[return-value]
+    return parser

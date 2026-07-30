@@ -8,10 +8,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from mcp.server import MCPServer
-
 from canhoto import service
 from canhoto.mcp.allowlist import MCP_TOOL_ALLOWLIST, MCP_TOOL_DENYLIST
+from mcp.server import MCPServer
 
 _SERVER_NAME = "canhoto"
 _INSTRUCTIONS = (

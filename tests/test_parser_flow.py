@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from canhoto import service
 from canhoto.core.config import init_data_dir, load_config
 from canhoto.core.models import ParserEntry
@@ -213,7 +212,21 @@ def test_cli_parsers_scaffold_test_enable_list(
 ) -> None:
     from canhoto.cli import main
 
-    assert main(["parsers", "scaffold", "--id", "demo_card", "--type", "card", "--institution", "demo"]) == 0
+    assert (
+        main(
+            [
+                "parsers",
+                "scaffold",
+                "--id",
+                "demo_card",
+                "--type",
+                "card",
+                "--institution",
+                "demo",
+            ]
+        )
+        == 0
+    )
     service.parser_write("demo_card", _WORKING_PARSER, root=data_home)
     sample = tmp_path / "sample.txt"
     sample.write_text("DEMO_CARD via cli\n", encoding="utf-8")
@@ -234,7 +247,21 @@ def test_cli_enable_without_test_exits_nonzero(
 ) -> None:
     from canhoto.cli import main
 
-    assert main(["parsers", "scaffold", "--id", "demo_card", "--type", "card", "--institution", "demo"]) == 0
+    assert (
+        main(
+            [
+                "parsers",
+                "scaffold",
+                "--id",
+                "demo_card",
+                "--type",
+                "card",
+                "--institution",
+                "demo",
+            ]
+        )
+        == 0
+    )
     assert main(["parsers", "enable", "--id", "demo_card"]) == 1
     err = capsys.readouterr()
     combined = err.out + err.err

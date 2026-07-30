@@ -13,12 +13,12 @@ data overridable later; package defaults never include personal names.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
-from canhoto.core.models import ClassificationPatch, ClassificationResult, LedgerTransaction
 from canhoto.core import store as core_store
+from canhoto.core.models import ClassificationPatch, ClassificationResult, LedgerTransaction
 
 # Month listing ceiling for a single rules pass (household-scale statements).
 _DEFAULT_MONTH_LIMIT = 50_000

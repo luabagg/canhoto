@@ -11,12 +11,11 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-
-from canhoto.core.config import config_path, db_path, get_data_dir, load_config
-from canhoto.core.models import LedgerTransaction, ParserEntry
-from canhoto.core.store import upsert_transactions
 from canhoto import service
 from canhoto.cli import main as cli_main
+from canhoto.core.config import config_path, db_path, load_config
+from canhoto.core.models import LedgerTransaction, ParserEntry
+from canhoto.core.store import upsert_transactions
 
 
 @pytest.fixture

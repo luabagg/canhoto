@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-
+from canhoto import service
 from canhoto.core import categorize as core_categorize
 from canhoto.core import config as core_config
 from canhoto.core.models import LedgerTransaction
@@ -14,10 +14,11 @@ from canhoto.core.store import (
     ensure_schema,
     get_merchant_category,
     get_transaction,
-    set_merchant_category as store_set_merchant_category,
     upsert_transactions,
 )
-from canhoto import service
+from canhoto.core.store import (
+    set_merchant_category as store_set_merchant_category,
+)
 
 
 @pytest.fixture

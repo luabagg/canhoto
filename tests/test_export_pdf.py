@@ -7,11 +7,10 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-
 from canhoto import service
 from canhoto.cli import main as cli_main
 from canhoto.core import config as core_config
-from canhoto.core.models import LedgerTransaction, MonthBreakdown
+from canhoto.core.models import LedgerTransaction
 from canhoto.core.store import ensure_schema, upsert_transactions
 from canhoto.mcp.server import create_server
 
