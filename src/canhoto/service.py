@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Sequence
 
+from canhoto.core import breakdown as core_breakdown
 from canhoto.core import categorize as core_categorize
 from canhoto.core import config as core_config
 from canhoto.core import store as core_store
@@ -784,6 +785,45 @@ def set_categories(
         "applied": result.applied,
         "missing": list(result.missing),
         "count": len(parsed),
+        "data_dir": str(data_dir.resolve()),
+        "db_path": str(db_file),
+    }
+
+
+def month_breakdown(
+    month: str,
+    *,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Return aggregate month report (no transaction list).
+
+    Uses portable accounting rules: expenses include ``is_expense`` / expense
+    kinds (card spend counts); ``card_payment`` / ``self_transfer`` /
+    ``internal_transfer`` are excluded from spend; income is income-kind or
+    positive non-expense inflows. Amounts are decimal strings.
+
+    Honors ``agent_view.allow_aggregates``. Never returns ledger rows.
+    """
+    month_value = assert_month(month)
+    data_dir = _ensure_data_dir(root)
+    cfg = core_config.load_config(data_dir)
+    if not cfg.agent_view.allow_aggregates:
+        raise PermissionError(
+            "month_breakdown refused: agent_view.allow_aggregates is false"
+        )
+
+    db_file = core_config.db_path(data_dir)
+    core_store.ensure_schema(db_file)
+    txs = core_store.list_transactions(
+        month=month_value,
+        limit=core_breakdown.DEFAULT_MONTH_LIMIT,
+        path=db_file,
+    )
+    breakdown = core_breakdown.compute_month_breakdown(month_value, txs)
+    return {
+        "ok": True,
+        "month": month_value,
+        "breakdown": breakdown.model_dump(mode="json"),
         "data_dir": str(data_dir.resolve()),
         "db_path": str(db_file),
     }

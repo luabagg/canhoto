@@ -9,6 +9,7 @@ Package console scripts land in Phase 7. Until then, invoke via::
     python -m canhoto.cli parse path/to/statement.txt
     python -m canhoto.cli review --month YYYY-MM --json
     python -m canhoto.cli categorize apply --file patches.json
+    python -m canhoto.cli breakdown --month YYYY-MM
 """
 
 from __future__ import annotations
@@ -167,6 +168,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Category to apply on future matching rows",
     )
 
+    breakdown_p = sub.add_parser(
+        "breakdown",
+        help="Aggregate month report (income/expenses/net/by_category; no tx list)",
+    )
+    breakdown_p.add_argument(
+        "--month",
+        required=True,
+        help="Target month as YYYY-MM",
+    )
+
     return parser
 
 
@@ -199,6 +210,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.cmd == "categorize":
         return _run_categorize(args)
+    if args.cmd == "breakdown":
+        return _run_service_cmd(lambda: service.month_breakdown(args.month))
 
     parser.error(f"unknown command: {args.cmd}")
     return 2
