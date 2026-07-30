@@ -6,15 +6,17 @@ no raw SQL exposure, no unbounded ledger dumps.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 from canhoto.core import config as core_config
 from canhoto.core import store as core_store
-from canhoto.core.models import ParserEntry
+from canhoto.core.models import ParserEntry, StatementRecord
+from canhoto.core.pdf_text import extract_text
 from canhoto.parsers import loader as parser_loader
 from canhoto.parsers import scaffold as parser_scaffold_mod
 from canhoto.parsers.loader import ParserLoadError, ParserNotFoundError
@@ -348,6 +350,139 @@ def parser_list(*, root: Path | None = None) -> dict[str, Any]:
     return {"count": len(items), "parsers": items, "data_dir": str(data_dir.resolve())}
 
 
+# --- Ingest ---
+
+
+def ingest(
+    paths: Sequence[str | Path],
+    *,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Archive, parse, and upsert statement files via enabled plugin parsers.
+
+    For each path:
+      1. Archive raw bytes under ``data_dir/raw/`` by content hash
+      2. Extract text (PDF via pymupdf; plain text passthrough)
+      3. Choose an enabled parser by sniff score
+      4. Parse and upsert statement + transactions
+
+    Classification columns are preserved on same-id re-ingest.
+
+    Raises:
+        FileNotFoundError: a path does not exist
+        ParserNotFoundError: no enabled parser, or none claims the document
+        ParserLoadError: an enabled parser module fails to load
+        ValueError: empty path list or extract/parse hard failure
+    """
+    if not paths:
+        raise ValueError("ingest requires at least one path")
+
+    data_dir = _ensure_data_dir(root)
+    cfg = core_config.load_config(data_dir)
+    parsers = parser_loader.load_enabled_parsers(cfg, root=data_dir)
+    if not parsers:
+        raise ParserNotFoundError(
+            "no enabled parser claimed this document (no enabled parsers registered)"
+        )
+
+    db_file = core_config.db_path(data_dir)
+    core_store.ensure_schema(db_file)
+    raw_dir = data_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    files_out: list[dict[str, Any]] = []
+    total_txs = 0
+    total_inserted = 0
+    total_updated = 0
+
+    for raw_path in paths:
+        src = Path(raw_path).expanduser()
+        if not src.is_file():
+            raise FileNotFoundError(f"file not found: {src}")
+
+        content = src.read_bytes()
+        content_hash = hashlib.sha256(content).hexdigest()
+        archived_path = _archive_raw(raw_dir, content_hash, src, content)
+
+        text = extract_text(src)
+        parser = parser_loader.choose_parser(text, parsers)
+        source_file = str(src.resolve())
+        parsed = parser.parse(text, source_file)
+
+        # Prefer path identity for ledger source_file; keep parse meta consistent.
+        meta = parsed.meta.model_copy(update={"source_file": source_file})
+        txs = [
+            tx.model_copy(update={"source_file": source_file})
+            if tx.source_file != source_file
+            else tx
+            for tx in parsed.transactions
+        ]
+
+        statement = StatementRecord(
+            content_hash=content_hash,
+            source_file=source_file,
+            statement_type=str(meta.statement_type),
+            institution=meta.institution,
+            meta_json=meta.model_dump(mode="json"),
+        )
+        upsert, stmt_result = core_store.save_statement_with_transactions(
+            statement,
+            txs,
+            path=db_file,
+            preserve_classification=True,
+        )
+
+        total_txs += len(txs)
+        total_inserted += upsert.inserted
+        total_updated += upsert.updated
+        files_out.append(
+            {
+                "ok": True,
+                "path": source_file,
+                "archived_path": str(archived_path),
+                "content_hash": content_hash,
+                "parser_id": getattr(parser, "id", None),
+                "statement_type": str(meta.statement_type),
+                "institution": meta.institution,
+                "transaction_count": len(txs),
+                "inserted": upsert.inserted,
+                "updated": upsert.updated,
+                "statement_created": stmt_result.created,
+                "linked": stmt_result.linked,
+            }
+        )
+
+    return {
+        "ok": True,
+        "data_dir": str(data_dir.resolve()),
+        "db_path": str(db_file),
+        "file_count": len(files_out),
+        "transaction_count": total_txs,
+        "inserted": total_inserted,
+        "updated": total_updated,
+        "files": files_out,
+    }
+
+
+def _archive_raw(
+    raw_dir: Path,
+    content_hash: str,
+    src: Path,
+    content: bytes,
+) -> Path:
+    """Write content-addressed copy under raw/. Idempotent for same hash+suffix."""
+    suffix = src.suffix.lower() if src.suffix else ""
+    dest = raw_dir / f"{content_hash}{suffix}"
+    if dest.is_file():
+        # Already archived; verify same bytes when present.
+        if dest.read_bytes() == content:
+            return dest.resolve()
+        # Extremely unlikely hash collision with different bytes: keep first copy.
+        return dest.resolve()
+    dest.write_bytes(content)
+    return dest.resolve()
+
+
 def _ensure_data_dir(root: Path | None) -> Path:
     path = (root if root is not None else core_config.get_data_dir()).expanduser()
     return core_config.init_data_dir(path)
@@ -399,23 +534,8 @@ def _parser_module_path(data_dir: Path, parsers_dir: str, module: str) -> Path:
 
 
 def _read_sample_text(sample: Path) -> str:
-    """Read sample bytes as text. PDF extract lands with ingest; v1 uses UTF-8."""
-    suffix = sample.suffix.lower()
-    if suffix == ".pdf":
-        # Optional soft path if PyMuPDF is available; otherwise clear error.
-        try:
-            import fitz  # type: ignore[import-untyped]
-        except ImportError as exc:  # pragma: no cover - env dependent
-            raise ValueError(
-                "PDF samples require PyMuPDF (pymupdf); install project deps or use .txt"
-            ) from exc
-        doc = fitz.open(sample)
-        try:
-            parts = [page.get_text() for page in doc]
-        finally:
-            doc.close()
-        return "\n".join(parts)
-    return sample.read_text(encoding="utf-8", errors="replace")
+    """Read sample file as text via shared extract helper."""
+    return extract_text(sample)
 
 
 def _utc_now_iso() -> str:
