@@ -135,6 +135,8 @@ def _load_entry(
 
 
 def _import_module_from_path(import_name: str, module_path: Path) -> ModuleType:
+    # Drop any prior import so parser_write / re-test always sees fresh source.
+    sys.modules.pop(import_name, None)
     spec = importlib.util.spec_from_file_location(import_name, module_path)
     if spec is None or spec.loader is None:
         raise ParserLoadError(f"cannot create import spec for {module_path}")

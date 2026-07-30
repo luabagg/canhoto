@@ -1,6 +1,6 @@
 """Service façade for CLI/MCP adapters.
 
-Thin orchestration over core config + store. No parser loader, no Sheets,
+Thin orchestration over core config + store + parser lifecycle. No Sheets,
 no raw SQL exposure, no unbounded ledger dumps.
 """
 
@@ -8,11 +8,18 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from canhoto.core import config as core_config
 from canhoto.core import store as core_store
+from canhoto.core.models import ParserEntry
+from canhoto.parsers import loader as parser_loader
+from canhoto.parsers import scaffold as parser_scaffold_mod
+from canhoto.parsers.loader import ParserLoadError, ParserNotFoundError
+
+Source = Literal["cli", "mcp"]
 
 
 def init(root: Path | None = None) -> dict[str, Any]:
@@ -117,3 +124,301 @@ def _is_writable(path: Path) -> bool:
         return parent.exists() and os.access(parent, os.W_OK | os.X_OK)
     except OSError:
         return False
+
+
+# --- Parser lifecycle (scaffold / write / test / enable / list) ---
+
+
+def parser_scaffold(
+    parser_id: str,
+    statement_type: str,
+    institution: str,
+    *,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Create a stub parser module and register it disabled in config."""
+    data_dir = _ensure_data_dir(root)
+    cfg = core_config.load_config(data_dir)
+    pid = parser_scaffold_mod.validate_parser_id(parser_id)
+    if _find_parser_entry(cfg.parsers, pid) is not None:
+        raise ValueError(f"parser id already registered: {pid!r}")
+
+    parsers_root = data_dir / cfg.parsers_dir
+    path = parser_scaffold_mod.write_stub_module(
+        parsers_root,
+        parser_id=pid,
+        statement_type=statement_type,
+        institution=institution,
+        overwrite=False,
+    )
+    entry = ParserEntry(
+        id=pid,
+        module=path.name,
+        enabled=False,
+        last_test_ok=None,
+        last_test_at=None,
+        last_test_error=None,
+    )
+    parsers = list(cfg.parsers) + [entry]
+    core_config.save_config(cfg.model_copy(update={"parsers": parsers}), root=data_dir)
+    return {
+        "id": entry.id,
+        "module": entry.module,
+        "path": str(path),
+        "enabled": False,
+        "last_test_ok": None,
+        "statement_type": statement_type.strip().lower(),
+        "institution": institution.strip(),
+    }
+
+
+def parser_write(
+    parser_id: str,
+    code: str,
+    *,
+    root: Path | None = None,
+    source: Source = "cli",
+) -> dict[str, Any]:
+    """Overwrite a registered parser module with ``code``.
+
+    CLI (default ``source="cli"``) always may write. MCP callers must pass
+    ``source="mcp"``, which is refused unless ``agent_view.allow_parser_writes``.
+    A successful write clears enable + last-test stamps so enable requires retest.
+    """
+    data_dir = _ensure_data_dir(root)
+    cfg = core_config.load_config(data_dir)
+    if source == "mcp" and not cfg.agent_view.allow_parser_writes:
+        raise PermissionError(
+            "parser_write refused: agent_view.allow_parser_writes is false"
+        )
+
+    entry = _require_parser_entry(cfg.parsers, parser_id)
+    path = _parser_module_path(data_dir, cfg.parsers_dir, entry.module)
+    if not path.parent.is_dir():
+        path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(code, encoding="utf-8")
+
+    updated = entry.model_copy(
+        update={
+            "enabled": False,
+            "last_test_ok": None,
+            "last_test_at": None,
+            "last_test_error": None,
+        }
+    )
+    core_config.save_config(
+        cfg.model_copy(update={"parsers": _replace_entry(cfg.parsers, updated)}),
+        root=data_dir,
+    )
+    return {
+        "id": updated.id,
+        "module": updated.module,
+        "path": str(path),
+        "enabled": False,
+        "last_test_ok": None,
+        "bytes_written": len(code.encode("utf-8")),
+    }
+
+
+def parser_test(
+    parser_id: str,
+    file: str | Path,
+    *,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Load parser by id, run parse against sample file, stamp last_test_* on config."""
+    data_dir = _ensure_data_dir(root)
+    cfg = core_config.load_config(data_dir)
+    entry = _require_parser_entry(cfg.parsers, parser_id)
+    sample = Path(file).expanduser()
+    if not sample.is_file():
+        raise FileNotFoundError(f"sample file not found: {sample}")
+
+    text = _read_sample_text(sample)
+    source_file = str(sample)
+    now = _utc_now_iso()
+    ok = False
+    error: str | None = None
+    transaction_count = 0
+    sniff_score: float | None = None
+    statement_type: str | None = None
+    institution: str | None = None
+
+    try:
+        parser = parser_loader.load_parser_by_id(cfg, entry.id, root=data_dir)
+        sniff_score = float(parser.sniff(text))
+        result = parser.parse(text, source_file)
+        transaction_count = len(result.transactions)
+        statement_type = str(result.meta.statement_type)
+        institution = result.meta.institution
+        ok = True
+    except (ParserLoadError, ParserNotFoundError, OSError, ValueError, RuntimeError) as exc:
+        error = f"{type(exc).__name__}: {exc}"
+    except Exception as exc:  # noqa: BLE001 — stamp any plugin failure
+        error = f"{type(exc).__name__}: {exc}"
+
+    updated = entry.model_copy(
+        update={
+            "last_test_ok": ok,
+            "last_test_at": now,
+            "last_test_error": None if ok else (error or "parse failed"),
+            # Failed or re-run tests never leave enable stuck on stale code.
+            "enabled": entry.enabled if ok else False,
+        }
+    )
+    # Keep enabled only when still OK; a failed test always disables.
+    if not ok:
+        updated = updated.model_copy(update={"enabled": False})
+
+    core_config.save_config(
+        cfg.model_copy(update={"parsers": _replace_entry(cfg.parsers, updated)}),
+        root=data_dir,
+    )
+    out: dict[str, Any] = {
+        "id": updated.id,
+        "ok": ok,
+        "last_test_ok": updated.last_test_ok,
+        "last_test_at": updated.last_test_at,
+        "last_test_error": updated.last_test_error,
+        "enabled": updated.enabled,
+        "sample": source_file,
+        "transaction_count": transaction_count,
+        "sniff_score": sniff_score,
+    }
+    if statement_type is not None:
+        out["statement_type"] = statement_type
+    if institution is not None:
+        out["institution"] = institution
+    return out
+
+
+def parser_enable(
+    parser_id: str,
+    *,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Enable a parser only when the last ``parser_test`` stamped OK."""
+    data_dir = _ensure_data_dir(root)
+    cfg = core_config.load_config(data_dir)
+    entry = _require_parser_entry(cfg.parsers, parser_id)
+
+    if entry.last_test_ok is not True:
+        detail = entry.last_test_error or "no successful test stamp"
+        raise ValueError(
+            f"cannot enable parser {entry.id!r}: last test not OK ({detail})"
+        )
+
+    # Prove the module still loads before flipping the enable bit.
+    try:
+        parser_loader.load_parser_by_id(cfg, entry.id, root=data_dir)
+    except (ParserLoadError, ParserNotFoundError) as exc:
+        raise ValueError(
+            f"cannot enable parser {entry.id!r}: module load failed ({exc})"
+        ) from exc
+
+    updated = entry.model_copy(update={"enabled": True})
+    core_config.save_config(
+        cfg.model_copy(update={"parsers": _replace_entry(cfg.parsers, updated)}),
+        root=data_dir,
+    )
+    return {
+        "id": updated.id,
+        "module": updated.module,
+        "enabled": True,
+        "last_test_ok": updated.last_test_ok,
+        "last_test_at": updated.last_test_at,
+    }
+
+
+def parser_list(*, root: Path | None = None) -> dict[str, Any]:
+    """Return registered parsers and their enable/test status."""
+    data_dir = _ensure_data_dir(root)
+    cfg = core_config.load_config(data_dir)
+    items = [
+        {
+            "id": e.id,
+            "module": e.module,
+            "enabled": e.enabled,
+            "last_test_ok": e.last_test_ok,
+            "last_test_at": e.last_test_at,
+            "last_test_error": e.last_test_error,
+        }
+        for e in cfg.parsers
+    ]
+    return {"count": len(items), "parsers": items, "data_dir": str(data_dir.resolve())}
+
+
+def _ensure_data_dir(root: Path | None) -> Path:
+    path = (root if root is not None else core_config.get_data_dir()).expanduser()
+    return core_config.init_data_dir(path)
+
+
+def _find_parser_entry(
+    entries: list[ParserEntry], parser_id: str
+) -> ParserEntry | None:
+    for entry in entries:
+        if entry.id == parser_id:
+            return entry
+    return None
+
+
+def _require_parser_entry(
+    entries: list[ParserEntry], parser_id: str
+) -> ParserEntry:
+    entry = _find_parser_entry(entries, parser_id)
+    if entry is None:
+        raise ParserNotFoundError(f"parser id not registered in config: {parser_id!r}")
+    return entry
+
+
+def _replace_entry(
+    entries: list[ParserEntry], updated: ParserEntry
+) -> list[ParserEntry]:
+    out: list[ParserEntry] = []
+    found = False
+    for entry in entries:
+        if entry.id == updated.id:
+            out.append(updated)
+            found = True
+        else:
+            out.append(entry)
+    if not found:
+        out.append(updated)
+    return out
+
+
+def _parser_module_path(data_dir: Path, parsers_dir: str, module: str) -> Path:
+    name = module if module.endswith(".py") else f"{module}.py"
+    parsers_root = (data_dir / parsers_dir).resolve()
+    path = (parsers_root / name).resolve()
+    try:
+        path.relative_to(parsers_root)
+    except ValueError as exc:
+        raise ValueError(f"parser module path escapes parsers dir: {module!r}") from exc
+    return path
+
+
+def _read_sample_text(sample: Path) -> str:
+    """Read sample bytes as text. PDF extract lands with ingest; v1 uses UTF-8."""
+    suffix = sample.suffix.lower()
+    if suffix == ".pdf":
+        # Optional soft path if PyMuPDF is available; otherwise clear error.
+        try:
+            import fitz  # type: ignore[import-untyped]
+        except ImportError as exc:  # pragma: no cover - env dependent
+            raise ValueError(
+                "PDF samples require PyMuPDF (pymupdf); install project deps or use .txt"
+            ) from exc
+        doc = fitz.open(sample)
+        try:
+            parts = [page.get_text() for page in doc]
+        finally:
+            doc.close()
+        return "\n".join(parts)
+    return sample.read_text(encoding="utf-8", errors="replace")
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
+        "+00:00", "Z"
+    )

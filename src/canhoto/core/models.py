@@ -70,6 +70,10 @@ class ParserEntry(BaseModel):
     id: str
     module: str  # filename under parsers_dir
     enabled: bool = False
+    # Last parser_test stamp (config field; not a sidecar). None = never tested.
+    last_test_ok: bool | None = None
+    last_test_at: str | None = None  # ISO-8601 UTC timestamp
+    last_test_error: str | None = None
 
 
 class AppConfig(BaseModel):
