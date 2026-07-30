@@ -61,7 +61,7 @@ Paths below are on the **archive** branch (package still named `finance_ingest` 
 2. Bank parsers → `examples/parsers/` or user `~/.canhoto/parsers/`, not required wheel contents.  
 3. BR-specific regex (PIX, etc.) → locale/rules config, not eternal core.  
 4. Sheets/OAuth → optional exporter later; no Google deps on default install.  
-5. Rename while porting: `finance_ingest` → `canhoto`, CLI → `coto`.  
+5. Rename while porting: `finance_ingest` → `canhoto`, CLI → `canhoto`.  
 6. Keep guardrail tests green; never reintroduce unbounded ledger MCP tools “because archive had them.”
 
 ## Relationship to Canhoto

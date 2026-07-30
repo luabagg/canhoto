@@ -5,7 +5,7 @@
 > **Do not** continue the Sheets-first or “ship all bank parsers in package” designs.  
 > **Prior WIP snapshot:** branch `archive/2026-07-29-pre-engine-redesign` (reference only).
 
-**Product:** Canhoto — CLI `coto`, MCP `coto-mcp`, package `canhoto`, data `~/.canhoto` / `$CANHOTO_DATA_DIR`.
+**Product:** Canhoto — CLI `canhoto`, MCP `canhoto-mcp`, package `canhoto`, data `~/.canhoto` / `$CANHOTO_DATA_DIR`.
 
 **Goal:** Rebuild the product as a distributable local engine: user/agent Python statement parsers, SQLite ledger, agent-host MCP (e.g. Hermes) domain tools, summary PDF export, with guardrails enforced in code and tests.
 
@@ -16,7 +16,7 @@
 ## Global Constraints
 
 - Data dir: `CANHOTO_DATA_DIR` or `~/.canhoto`.
-- Package scripts are `coto` and `coto-mcp` (product **Canhoto**).
+- Package scripts are `canhoto` and `canhoto-mcp` (product **Canhoto**).
 - No Google API deps on the default/non-extra install path for v1.
 - No required built-in Itaú/MP parsers in the distributed runtime package.
 - MCP: domain tools only; never `sql_query` / arbitrary SELECT.
@@ -28,7 +28,7 @@
 - TDD: failing test → implement → pass → commit per task.
 - Do not commit secrets, real statements, or `~/.canhoto` contents.
 
-- **Canhoto rename:** new modules use `canhoto` / `coto`; do not add new public `finance_*` names.
+- **Canhoto rename:** new modules use `canhoto` / `canhoto`; do not add new public `finance_*` names.
 - Core remains country-agnostic; BRL/PIX-style rules belong in default locale/profile, not the kernel.
 
 ---
@@ -269,13 +269,13 @@ Reuse good ideas from archive branch store, but **do not** require `pushed_to_sh
 **Files:** `cli.py`, `service.py`, `tests/test_doctor.py`
 
 ```bash
-coto init
-coto doctor
+canhoto init
+canhoto doctor
 ```
 
 Doctor JSON checks: data dir writable, config present, parser count enabled/disabled, db openable, pending_review total.
 
-- [ ] Commit `feat: add coto init and doctor`
+- [ ] Commit `feat: add canhoto init and doctor`
 
 **Phase 1 exit:** installable module initializes a clean data dir and doctor runs without parsers.
 
@@ -314,10 +314,10 @@ def choose_parser(text: str, parsers: sequence[StatementParser]) -> StatementPar
 **CLI:**
 
 ```bash
-coto parsers scaffold --id demo_card --type card --institution demo
-coto parsers test --id demo_card --file /path/to/sample.pdf
-coto parsers enable --id demo_card
-coto parsers list
+canhoto parsers scaffold --id demo_card --type card --institution demo
+canhoto parsers test --id demo_card --file /path/to/sample.pdf
+canhoto parsers enable --id demo_card
+canhoto parsers list
 ```
 
 **Service APIs** used later by MCP:
@@ -337,7 +337,7 @@ Rules:
 **Files:** `examples/parsers/README.md` + one `examples/parsers/demo_line_parser.py` that parses a trivial fixture format used in tests.
 
 - Not auto-loaded from package.
-- `coto parsers scaffold` may copy from example template text embedded in package resources.
+- `canhoto parsers scaffold` may copy from example template text embedded in package resources.
 
 - [ ] Commit `docs: add example statement parser template`
 
@@ -370,8 +370,8 @@ ingest(paths) ->
 ### Task 3.2 — CLI ingest
 
 ```bash
-coto ingest ~/statements/*.pdf
-coto parse ~/statements/a.pdf    # dry-run JSON summary (capped rows)
+canhoto ingest ~/statements/*.pdf
+canhoto parse ~/statements/a.pdf    # dry-run JSON summary (capped rows)
 ```
 
 - [ ] Commit `feat: CLI ingest and parse dry-run`
@@ -387,7 +387,7 @@ coto parse ~/statements/a.pdf    # dry-run JSON summary (capped rows)
 Port/adapt `categorize.py` rules (self-transfer markers, card payment, etc.) without Sheets assumptions.
 
 ```bash
-coto categorize rules --month 2026-06
+canhoto categorize rules --month 2026-06
 ```
 
 - [ ] Commit `feat: deterministic categorization rules`
@@ -404,8 +404,8 @@ Must use Phase 0 redaction + policy.
 CLI:
 
 ```bash
-coto review --month 2026-06 --json
-coto categorize apply --file patches.json
+canhoto review --month 2026-06 --json
+canhoto categorize apply --file patches.json
 ```
 
 - [ ] Guardrail test: review JSON keys ⊆ ReviewItem fields
@@ -437,7 +437,7 @@ No transaction list field.
 
 ### Task 5.1 — Server wiring
 
-**Files:** `src/canhoto/mcp/server.py`, entrypoint `coto-mcp`
+**Files:** `src/canhoto/mcp/server.py`, entrypoint `canhoto-mcp`
 
 Register **only** `MCP_TOOL_ALLOWLIST` tools. Each tool calls `service.*`.
 
@@ -482,7 +482,7 @@ class ReportBundle:
 ```
 
 ```bash
-coto export pdf 2026-06
+canhoto export pdf 2026-06
 # → $CANHOTO_DATA_DIR/exports/2026-06-summary.pdf
 ```
 
@@ -499,7 +499,7 @@ MCP: `export_pdf(month) -> {path, bytes or size}`
 
 ### Task 7.1 — Package & README
 
-- README: install via `uv tool install canhoto` / `pipx`, data dir, MCP host snippet (`coto-mcp`), parser authoring pointer, privacy notes.
+- README: install via `uv tool install canhoto` / `pipx`, data dir, MCP host snippet (`canhoto-mcp`), parser authoring pointer, privacy notes.
 - `pyproject.toml`: description, scripts, deps; Sheets extra **removed or clearly legacy-not-installed**.
 - Point STATUS.md at ARCHITECTURE.md.
 
@@ -521,7 +521,7 @@ Short `docs/MIGRATION.md`: how to copy old Itaú/MP parsers from archive branch 
 ## Suggested agent demo script (acceptance)
 
 ```text
-1. coto init
+1. canhoto init
 2. config agent_view.allow_parser_writes=true (for full agent profile)
 3. Agent: preview sample fixture
 4. Agent: write demo parser / real user parser

@@ -19,8 +19,8 @@ This document is the product/architecture contract. Implementation order lives i
 | Product name | **Canhoto** |
 | PyPI / project | `canhoto` |
 | Import package | `canhoto` |
-| CLI | `coto` |
-| MCP server binary | `coto-mcp` |
+| CLI | `canhoto` |
+| MCP server binary | `canhoto-mcp` |
 | MCP server label (hosts) | `canhoto` |
 | Data dir | `~/.canhoto` or `$CANHOTO_DATA_DIR` |
 | DB file | `canhoto.db` |
@@ -54,8 +54,8 @@ Installable local CLI + optional MCP server: user (or agent host) points at **ba
 | Artifact | Role |
 |---|---|
 | PyPI / `uv tool install canhoto` | Engine only (no user money data) |
-| `coto` | Human + agent CLI |
-| `coto-mcp` | Optional MCP stdio server (host-spawned; user does **not** babysit a daemon) |
+| `canhoto` | Human + agent CLI |
+| `canhoto-mcp` | Optional MCP stdio server (host-spawned; user does **not** babysit a daemon) |
 | `~/.canhoto/` or `$CANHOTO_DATA_DIR` | Config, DB, user parsers, raw archives, exports |
 
 Users must **not** need the git monorepo to run the tool. Contributors clone git; end users install the package.
@@ -75,7 +75,7 @@ Hermes / MCP host example:
 ```yaml
 mcp_servers:
   canhoto:
-    command: coto-mcp
+    command: canhoto-mcp
 ```
 
 ---
@@ -188,7 +188,7 @@ Config-driven projection of what CLI agent commands and MCP tools may return. No
 
 ## 7. MCP happy path (e.g. Hermes)
 
-MCP transport is **stdio**. Client (Hermes, Claude Code, Cursor) **spawns** `coto-mcp`; user does not pre-start a server.
+MCP transport is **stdio**. Client (Hermes, Claude Code, Cursor) **spawns** `canhoto-mcp`; user does not pre-start a server.
 
 Target chat:
 
@@ -294,7 +294,7 @@ Until the code rename lands, the tree may still be `src/finance_ingest/`; treat 
 
 | Old | New |
 |---|---|
-| Name `personal-finance-ingest` / `finance` | **Canhoto** / `coto` |
+| Name `personal-finance-ingest` / `finance` | **Canhoto** / `canhoto` |
 | Hardcoded MP/Itaú detect+parse in package | User parser plugins; copy from archive into data dir if desired |
 | Sheets + Google OAuth in core | Dropped from core; future exporter |
 | Fat MCP (parse/list/sheets/config) | Domain MCP for full agent loop; still no raw SQL |
@@ -306,10 +306,10 @@ Reference implementation details: `docs/ARCHIVE_BRANCH.md`.
 
 ## 12. Success criteria (v1 done)
 
-1. Fresh install exposes `coto` and `coto-mcp` without repo checkout.  
+1. Fresh install exposes `canhoto` and `canhoto-mcp` without repo checkout.  
 2. Empty parsers dir → clear doctor errors; after agent adds parser → ingest works.  
 3. Agent host can complete preview → parser → ingest → categorize → breakdown → PDF path.  
 4. No Google dependency on default install.  
 5. Guardrail tests prove review batches and breakdown cannot return forbidden fields.  
-6. `coto doctor` reports data dir, parsers, pending counts, export readiness.  
+6. `canhoto doctor` reports data dir, parsers, pending counts, export readiness.  
 7. Core accepts non-BRL currency and non-BR institution strings without code changes.  

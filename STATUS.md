@@ -10,8 +10,8 @@
 | | |
 |---|---|
 | Product | **Canhoto** (stub/counterfoil you keep) |
-| CLI | `coto` |
-| MCP | `coto-mcp` |
+| CLI | `canhoto` |
+| MCP | `canhoto-mcp` |
 | Data | `~/.canhoto` / `$CANHOTO_DATA_DIR` |
 
 ## Branches
@@ -23,7 +23,7 @@
 
 ## Direction (summary)
 
-- Distributable CLI package + optional host-spawned MCP (`coto-mcp`)
+- Distributable CLI package + optional host-spawned MCP (`canhoto-mcp`)
 - User/agent **Python statement parsers** in data dir (no required built-in banks)
 - SQLite ledger; **summary PDF** export v1; Sheets deferred as future exporter plugin
 - Agent loop: preview → parser → ingest → categorize → breakdown → PDF

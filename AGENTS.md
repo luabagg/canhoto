@@ -2,7 +2,7 @@
 
 You are implementing (or extending) **Canhoto**, a local personal finance engine. Read this file completely before editing code.
 
-**Canhoto** = the stub/counterfoil you keep (document sense). CLI is short: **`coto`**.
+**Canhoto** = the stub/counterfoil you keep (document sense). CLI: **`canhoto`**.
 
 ## Read order (mandatory)
 
@@ -19,8 +19,8 @@ Do **not** treat legacy README Sheets flow or old `STATUS.md` history as the tar
 | Layer | Value |
 |---|---|
 | Product | Canhoto |
-| CLI | `coto` |
-| MCP binary | `coto-mcp` |
+| CLI | `canhoto` |
+| MCP binary | `canhoto-mcp` |
 | Package import (target) | `canhoto` |
 | Data dir | `~/.canhoto` / `$CANHOTO_DATA_DIR` |
 | DB | `canhoto.db` |
@@ -31,8 +31,8 @@ Legacy in tree until rename tasks run: `finance_ingest`, `finance`, `finance-mcp
 
 Build a distributable tool:
 
-- **CLI** `coto` — init, doctor, parsers, ingest, categorize, review, export PDF  
-- **MCP** `coto-mcp` — host-spawned stdio tools for full agent loop  
+- **CLI** `canhoto` — init, doctor, parsers, ingest, categorize, review, export PDF  
+- **MCP** `canhoto-mcp` — host-spawned stdio tools for full agent loop  
 - **User Python parsers** in `~/.canhoto/parsers/` (no mandatory bank parsers in the package)  
 - **SQLite** ledger as system of record  
 - **Summary PDF** export v1  
@@ -51,7 +51,7 @@ Build a distributable tool:
 | PDF summary only in v1 | Full transaction listing PDF in v1 |
 | Keep core locale-pluggable | Hardcode PIX/BRL/Itaú as the only path |
 | Consult archive via `docs/ARCHIVE_BRANCH.md` | Merge archive branch wholesale into main |
-| Use Canhoto / `coto` in new docs & APIs | Introduce new `finance_*` public names |
+| Use Canhoto / `canhoto` in new docs & APIs | Introduce new `finance_*` public names |
 
 ## Repo state you may see
 
@@ -81,12 +81,12 @@ uv run mypy src
 Target UX after rename:
 
 ```bash
-coto init
-coto doctor
-coto parsers scaffold --id demo_card --type card --institution demo
-coto ingest ~/statements/*.pdf
-coto review --month 2026-06 --json
-coto export pdf 2026-06
+canhoto init
+canhoto doctor
+canhoto parsers scaffold --id demo_card --type card --institution demo
+canhoto ingest ~/statements/*.pdf
+canhoto review --month 2026-06 --json
+canhoto export pdf 2026-06
 ```
 
 ## Implementation pattern

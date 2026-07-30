@@ -2,7 +2,7 @@
 
 **The stub you keep.** Local statement → ledger → categorize → summary PDF.
 
-Canhoto is a personal finance **engine**: drop bank/card statements, let an agent (or you) author parsers, store a normalized ledger in SQLite, categorize expenses, export a **monthly summary PDF**. Optional MCP (`coto-mcp`) for hosts like Hermes.
+Canhoto is a personal finance **engine**: drop bank/card statements, let an agent (or you) author parsers, store a normalized ledger in SQLite, categorize expenses, export a **monthly summary PDF**. Optional MCP (`canhoto-mcp`) for hosts like Hermes.
 
 - **Not** a hosted bank connection (no Pluggy/Open Finance required)
 - **Not** Google Sheets–centric (Sheets may return later as an export plugin)
@@ -10,8 +10,8 @@ Canhoto is a personal finance **engine**: drop bank/card statements, let an agen
 
 | | |
 |---|---|
-| CLI | `coto` |
-| MCP | `coto-mcp` |
+| CLI | `canhoto` |
+| MCP | `canhoto-mcp` |
 | Data | `~/.canhoto` (`CANHOTO_DATA_DIR`) |
 
 > **Implementers:** start at [`AGENTS.md`](AGENTS.md) → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) → [implementation plan](docs/superpowers/plans/2026-07-29-engine-mcp-pdf-redesign.md).
@@ -26,8 +26,8 @@ Redesign is **documented**; runtime code on `main` may still use legacy `finance
 uv tool install canhoto
 # or: pipx install canhoto
 
-coto init
-coto doctor
+canhoto init
+canhoto doctor
 ```
 
 ### Hermes
@@ -36,7 +36,7 @@ coto doctor
 # ~/.hermes/config.yaml
 mcp_servers:
   canhoto:
-    command: coto-mcp
+    command: canhoto-mcp
 ```
 
 Host spawns MCP over stdio — you do not keep a server running manually.
@@ -45,17 +45,17 @@ Host spawns MCP over stdio — you do not keep a server running manually.
 
 ```bash
 # one-time / when bank layout is new
-coto parsers scaffold --id my_bank_card --type card --institution my_bank
+canhoto parsers scaffold --id my_bank_card --type card --institution my_bank
 # agent writes parser under ~/.canhoto/parsers/
-coto parsers test --id my_bank_card --file ~/statements/sample.pdf
-coto parsers enable --id my_bank_card
+canhoto parsers test --id my_bank_card --file ~/statements/sample.pdf
+canhoto parsers enable --id my_bank_card
 
 # monthly
-coto ingest ~/statements/*.pdf
-coto categorize rules --month 2026-06
-coto review --month 2026-06 --json
+canhoto ingest ~/statements/*.pdf
+canhoto categorize rules --month 2026-06
+canhoto review --month 2026-06 --json
 # agent: review_batch + set_categories via MCP
-coto export pdf 2026-06
+canhoto export pdf 2026-06
 # → ~/.canhoto/exports/2026-06-summary.pdf
 ```
 
