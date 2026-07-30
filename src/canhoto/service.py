@@ -828,3 +828,67 @@ def month_breakdown(
         "db_path": str(db_file),
     }
 
+
+# --- Agent preview + PDF export (PDF body lands in Phase 6) ---
+
+
+def statement_preview(
+    path: str | Path,
+    *,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Extract statement text and return a truncated agent-safe preview.
+
+    Resolves the user path, extracts text via the shared PDF/text helper, and
+    truncates to ``agent_view.preview_max_chars``. Returns basename only — never
+    directory listings or unrelated filesystem dumps.
+    """
+    data_dir = _ensure_data_dir(root)
+    cfg = core_config.load_config(data_dir)
+    max_chars = int(cfg.agent_view.preview_max_chars)
+    if max_chars <= 0:
+        raise ValueError("agent_view.preview_max_chars must be positive")
+
+    src = Path(path).expanduser()
+    if not src.is_file():
+        raise FileNotFoundError(f"file not found: {src}")
+
+    text = extract_text(src)
+    char_count = len(text)
+    truncated = char_count > max_chars
+    preview = text[:max_chars] if truncated else text
+    return {
+        "path_basename": src.name,
+        "char_count": char_count,
+        "truncated": truncated,
+        "text": preview,
+    }
+
+
+def export_pdf(
+    month: str,
+    *,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Placeholder until Phase 6 implements summary PDF export.
+
+    Registered on the MCP allowlist now so tool list == allowlist. Returns a
+    structured error payload (does not raise) so agents can handle it cleanly.
+    """
+    # Validate month early so callers still get a useful shape when ready.
+    try:
+        month_value = assert_month(month)
+    except ValueError:
+        return {
+            "ok": False,
+            "error": "export_pdf_not_ready",
+            "month": month,
+        }
+
+    data_dir = _ensure_data_dir(root)
+    return {
+        "ok": False,
+        "error": "export_pdf_not_ready",
+        "month": month_value,
+        "data_dir": str(data_dir.resolve()),
+    }
