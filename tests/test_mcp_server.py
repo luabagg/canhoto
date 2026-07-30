@@ -9,7 +9,7 @@ import pytest
 
 from canhoto.core.config import init_data_dir, load_config, save_config
 from canhoto.mcp.allowlist import MCP_TOOL_ALLOWLIST, MCP_TOOL_DENYLIST
-from canhoto.mcp.server import create_server, registered_tool_names
+from canhoto.mcp.server import _INSTRUCTIONS, create_server, registered_tool_names
 
 
 @pytest.fixture
@@ -18,6 +18,29 @@ def data_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("CANHOTO_DATA_DIR", str(root))
     init_data_dir(root)
     return root
+
+
+def test_server_instructions_describe_happy_path() -> None:
+    text = _INSTRUCTIONS.lower()
+    for keyword in (
+        "statement_preview",
+        "parser_write",
+        "parser_test",
+        "parser_enable",
+        "ingest",
+        "run_rules",
+        "review_batch",
+        "set_categories",
+        "month_breakdown",
+        "export_pdf",
+        "allow_parser_writes",
+        "redacted",
+        "no sql",
+        "summary",
+    ):
+        assert keyword in text, f"missing happy-path keyword: {keyword!r}"
+    server = create_server()
+    assert getattr(server, "instructions", None) == _INSTRUCTIONS
 
 
 def test_registered_tools_match_allowlist() -> None:

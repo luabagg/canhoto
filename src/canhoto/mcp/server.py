@@ -15,11 +15,21 @@ from canhoto.mcp.allowlist import MCP_TOOL_ALLOWLIST, MCP_TOOL_DENYLIST
 
 _SERVER_NAME = "canhoto"
 _INSTRUCTIONS = (
-    "Canhoto personal finance engine. Domain tools only — no SQL, no Sheets, "
-    "no full ledger dumps. Happy path: statement_preview → parser_scaffold / "
-    "parser_write → parser_test → parser_enable → ingest → run_rules → "
-    "review_batch / set_categories loop → month_breakdown → export_pdf. "
-    "parser_write is gated by agent_view.allow_parser_writes."
+    "Canhoto personal finance engine — domain tools only. "
+    "No SQL, no Sheets, no unbounded ledger dumps. "
+    "\n\n"
+    "Happy path for agents:\n"
+    "1. statement_preview → parser_scaffold / parser_write → parser_test → parser_enable\n"
+    "2. ingest\n"
+    "3. run_rules → review_batch loop → set_categories (and set_merchant_category as needed)\n"
+    "4. month_breakdown → export_pdf\n"
+    "\n"
+    "Constraints:\n"
+    "- parser_write requires agent_view.allow_parser_writes=true.\n"
+    "- parser_enable only after a successful parser_test stamp.\n"
+    "- review_batch returns redacted, capped pending items — never raw full rows.\n"
+    "- export_pdf is summary-only (aggregates) when available; not a full transaction listing.\n"
+    "- Prefer doctor for data-dir health; do not invent off-allowlist tools."
 )
 
 
