@@ -151,6 +151,21 @@ def build_parser() -> argparse.ArgumentParser:
         dest="patches_file",
         help="Path to JSON list of classification patches",
     )
+    mem_p = cat_sub.add_parser(
+        "merchant",
+        help="Remember merchant_key → category for later rule runs",
+    )
+    mem_p.add_argument(
+        "--key",
+        required=True,
+        dest="merchant_key",
+        help="Normalized merchant key to remember",
+    )
+    mem_p.add_argument(
+        "--category",
+        required=True,
+        help="Category to apply on future matching rows",
+    )
 
     return parser
 
@@ -252,6 +267,13 @@ def _run_categorize(args: argparse.Namespace) -> int:
         return _run_service_cmd(lambda: service.run_rules(args.month))
     if args.categorize_cmd == "apply":
         return _run_service_cmd(lambda: _load_and_set_categories(args.patches_file))
+    if args.categorize_cmd == "merchant":
+        return _run_service_cmd(
+            lambda: service.set_merchant_category(
+                args.merchant_key,
+                args.category,
+            )
+        )
     _print_json(
         {"ok": False, "error": f"unknown categorize command: {args.categorize_cmd}"}
     )

@@ -615,7 +615,10 @@ def run_rules(
     root: Path | None = None,
     own_name_markers: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Apply deterministic rules to all ledger rows in ``month`` (YYYY-MM).
+    """Apply deterministic rules, then merchant memory, for ``month`` (YYYY-MM).
+
+    Order: rule pack → self-transfer markers → merchant_category_map recall
+    for rows still uncategorized / needs_review.
 
     Uses ``AppConfig.own_name_markers`` when ``own_name_markers`` is omitted.
     Never returns full ledger rows — only counts and pending-review total.
@@ -641,8 +644,51 @@ def run_rules(
         "month": month,
         "applied": result.applied,
         "missing": list(result.missing),
+        "merchant_memory_applied": result.merchant_memory_applied,
         "pending_review": pending,
         "own_name_markers_count": len(markers),
+        "data_dir": str(data_dir.resolve()),
+        "db_path": str(db_file),
+    }
+
+
+def set_merchant_category(
+    merchant_key: str,
+    category: str,
+    *,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Remember ``merchant_key → category`` for later rule runs.
+
+    Skips person-id-like keys (empty, CPF-shaped, digit-heavy). Does not
+    rewrite existing ledger rows — call ``run_rules`` to apply memory.
+    """
+    key = (merchant_key or "").strip()
+    cat = (category or "").strip()
+    if not cat:
+        raise ValueError("category must be a non-empty string")
+
+    data_dir = _ensure_data_dir(root)
+    db_file = core_config.db_path(data_dir)
+    core_store.ensure_schema(db_file)
+
+    if not core_categorize.is_learnable_merchant_key(key):
+        return {
+            "ok": True,
+            "learned": False,
+            "skipped_reason": "unlearnable_merchant_key",
+            "merchant_key": key,
+            "category": cat,
+            "data_dir": str(data_dir.resolve()),
+            "db_path": str(db_file),
+        }
+
+    core_store.set_merchant_category(key, cat, path=db_file)
+    return {
+        "ok": True,
+        "learned": True,
+        "merchant_key": key,
+        "category": cat,
         "data_dir": str(data_dir.resolve()),
         "db_path": str(db_file),
     }

@@ -223,6 +223,8 @@ class UpsertResult(BaseModel):
 class ClassificationResult(BaseModel):
     applied: int
     missing: list[str] = Field(default_factory=list)
+    # Rows classified via merchant_category_map after the rule pack (Task 4.3).
+    merchant_memory_applied: int = 0
 
 
 class StatementUpsertResult(BaseModel):

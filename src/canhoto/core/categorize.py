@@ -79,8 +79,12 @@ def apply_rules(
     """Return a deep-copied row with classification fields filled by rules.
 
     Does not mutate ``tx``. Does not touch the store.
+    Rows already settled (not needs_review, non-empty category other than
+    ``uncategorized``) are left unchanged so human/memory labels stick.
     """
     out = tx.model_copy(deep=True)
+    if not _eligible_for_rule_reclassify(out):
+        return out
     desc = _description_blob(out)
     markers = [m for m in (own_name_markers or []) if m and m.strip()]
     pack = list(rules) if rules is not None else default_rules()
@@ -161,7 +165,12 @@ def run_rules_for_month(
     rules: Sequence[Rule] | None = None,
     limit: int = _DEFAULT_MONTH_LIMIT,
 ) -> ClassificationResult:
-    """List month transactions, apply rules, persist changed classification fields."""
+    """List month transactions, apply rules, then merchant memory, persist patches.
+
+    Order:
+    1. Deterministic rule pack + self-transfer markers
+    2. Merchant category memory for rows still needing review
+    """
     _validate_month(month)
     txs = core_store.list_transactions(month=month, limit=limit, path=path)
     patches: list[ClassificationPatch] = []
@@ -174,9 +183,127 @@ def run_rules_for_month(
         patch = _diff_classification(tx, classified)
         if patch is not None:
             patches.append(patch)
+    if patches:
+        rules_result = core_store.apply_classifications(patches, path=path)
+    else:
+        rules_result = ClassificationResult(applied=0, missing=[])
+
+    memory_result = apply_merchant_memory_for_month(month, path=path, limit=limit)
+    return ClassificationResult(
+        applied=rules_result.applied + memory_result.applied,
+        missing=list(rules_result.missing) + list(memory_result.missing),
+        merchant_memory_applied=memory_result.applied,
+    )
+
+
+def apply_merchant_memory_for_month(
+    month: str,
+    *,
+    path: Path | None = None,
+    limit: int = _DEFAULT_MONTH_LIMIT,
+) -> ClassificationResult:
+    """Apply stored merchant→category map to still-pending rows in ``month``.
+
+    Only rows with ``needs_review=True`` (or empty/uncategorized category) are
+    considered. Known structural classifications are left alone. Learnable keys
+    only — person-id-like keys never match.
+    """
+    _validate_month(month)
+    txs = core_store.list_transactions(month=month, limit=limit, path=path)
+    patches: list[ClassificationPatch] = []
+    for tx in txs:
+        if not _eligible_for_merchant_memory(tx):
+            continue
+        key = merchant_key_for(tx)
+        if key is None:
+            continue
+        category = core_store.get_merchant_category(key, path=path)
+        if not category:
+            continue
+        classified = _classify_from_merchant_memory(tx, category=category)
+        patch = _diff_classification(tx, classified)
+        if patch is not None:
+            patches.append(patch)
     if not patches:
-        return ClassificationResult(applied=0, missing=[])
-    return core_store.apply_classifications(patches, path=path)
+        return ClassificationResult(applied=0, missing=[], merchant_memory_applied=0)
+    result = core_store.apply_classifications(patches, path=path)
+    return ClassificationResult(
+        applied=result.applied,
+        missing=list(result.missing),
+        merchant_memory_applied=result.applied,
+    )
+
+
+def is_learnable_merchant_key(merchant_key: str) -> bool:
+    """Return False for empty or person-id-like keys (CPF / digit-heavy).
+
+    Simple heuristic only — not a full identity detector.
+    """
+    key = (merchant_key or "").strip()
+    if not key:
+        return False
+    digits_only = re.sub(r"\D", "", key)
+    letters = sum(1 for c in key if c.isalpha())
+    # CPF-sized digit runs with little alphabetic content (person transfers).
+    if len(digits_only) >= 11 and letters <= 6:
+        return False
+    alnum = re.sub(r"[^0-9A-Za-z]", "", key)
+    if not alnum:
+        return False
+    digit_ratio = sum(c.isdigit() for c in alnum) / len(alnum)
+    if digit_ratio >= 0.8 and letters < 2:
+        return False
+    return True
+
+
+def merchant_key_for(tx: LedgerTransaction) -> str | None:
+    """Stable learnable key for a row, or None if nothing safe to remember."""
+    key = (tx.merchant_normalized or "").strip()
+    if not key:
+        key = _normalize_merchant(_description_blob(tx)).strip()
+    if not key or not is_learnable_merchant_key(key):
+        return None
+    return key
+
+
+def _eligible_for_rule_reclassify(tx: LedgerTransaction) -> bool:
+    """True when rules may overwrite classification fields."""
+    if tx.needs_review:
+        return True
+    cat = (tx.category or "").strip().lower()
+    return cat in ("", "uncategorized")
+
+
+def _eligible_for_merchant_memory(tx: LedgerTransaction) -> bool:
+    return _eligible_for_rule_reclassify(tx)
+
+
+def _classify_from_merchant_memory(
+    tx: LedgerTransaction, *, category: str
+) -> LedgerTransaction:
+    amount_minor = tx.amount_minor
+    if amount_minor < 0:
+        kind = "expense"
+        is_expense = True
+    elif amount_minor > 0:
+        kind = tx.kind or "income"
+        is_expense = False
+    else:
+        kind = tx.kind or ""
+        is_expense = False
+    return _classify(
+        tx,
+        category=category,
+        kind=kind or tx.kind or "expense",
+        is_expense=is_expense,
+        confidence=max(tx.confidence, 0.75),
+        needs_review=False,
+        review_reason=None,
+        merchant_normalized=tx.merchant_normalized
+        or merchant_key_for(tx)
+        or _normalize_merchant(_description_blob(tx))
+        or None,
+    )
 
 
 def _diff_classification(
@@ -277,7 +404,10 @@ def _validate_month(month: str) -> None:
 __all__ = [
     "DEFAULT_RULES",
     "Rule",
+    "apply_merchant_memory_for_month",
     "apply_rules",
     "default_rules",
+    "is_learnable_merchant_key",
+    "merchant_key_for",
     "run_rules_for_month",
 ]
