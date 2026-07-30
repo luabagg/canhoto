@@ -5,6 +5,8 @@ Package console scripts land in Phase 7. Until then, invoke via::
     python -m canhoto.cli init
     python -m canhoto.cli doctor
     python -m canhoto.cli parsers list
+    python -m canhoto.cli ingest path/to/statement.txt
+    python -m canhoto.cli parse path/to/statement.txt
 """
 
 from __future__ import annotations
@@ -12,10 +14,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from typing import Any, Sequence
 
 from canhoto import service
-from canhoto.parsers.loader import ParserNotFoundError
+from canhoto.parsers.loader import ParserLoadError, ParserNotFoundError
 
 
 def _print_json(obj: Any) -> None:
@@ -33,6 +36,28 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "doctor",
         help="Report data-dir health as JSON (writable, config, parsers, db, pending)",
+    )
+
+    ingest_p = sub.add_parser(
+        "ingest",
+        help="Archive, parse, and upsert one or more statement files",
+    )
+    ingest_p.add_argument(
+        "paths",
+        nargs="+",
+        help="Statement file paths (.txt or .pdf)",
+    )
+
+    parse_p = sub.add_parser(
+        "parse",
+        help="Dry-run extract+parse; capped JSON summary, no DB write",
+    )
+    parse_p.add_argument("file", help="Statement file path (.txt or .pdf)")
+    parse_p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Max preview rows (clamped by agent-view batch caps)",
     )
 
     parsers_p = sub.add_parser("parsers", help="Manage user/plugin statement parsers")
@@ -90,11 +115,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         report = service.doctor()
         _print_json(report)
         return 0 if report.get("ok", False) else 1
+    if args.cmd == "ingest":
+        return _run_service_cmd(lambda: service.ingest(args.paths))
+    if args.cmd == "parse":
+        return _run_service_cmd(
+            lambda: service.parse(args.file, limit=args.limit)
+        )
     if args.cmd == "parsers":
         return _run_parsers(args)
 
     parser.error(f"unknown command: {args.cmd}")
     return 2
+
+
+def _run_service_cmd(fn: Callable[[], dict[str, Any]]) -> int:
+    """Run a service call and print JSON; map domain errors to exit 1."""
+    try:
+        result = fn()
+        _print_json(result)
+        return 0 if result.get("ok", True) else 1
+    except (
+        ValueError,
+        FileNotFoundError,
+        PermissionError,
+        ParserNotFoundError,
+        ParserLoadError,
+    ) as exc:
+        _print_json({"ok": False, "error": str(exc)})
+        return 1
+    except Exception as exc:  # noqa: BLE001 — keep CLI JSON-friendly
+        _print_json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+        return 1
 
 
 def _run_parsers(args: argparse.Namespace) -> int:
@@ -118,7 +169,13 @@ def _run_parsers(args: argparse.Namespace) -> int:
         if args.parsers_cmd == "list":
             _print_json(service.parser_list())
             return 0
-    except (ValueError, FileNotFoundError, PermissionError, ParserNotFoundError) as exc:
+    except (
+        ValueError,
+        FileNotFoundError,
+        PermissionError,
+        ParserNotFoundError,
+        ParserLoadError,
+    ) as exc:
         _print_json({"ok": False, "error": str(exc)})
         return 1
     except Exception as exc:  # noqa: BLE001 — keep CLI JSON-friendly

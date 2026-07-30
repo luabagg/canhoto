@@ -17,6 +17,7 @@ from canhoto.core import config as core_config
 from canhoto.core import store as core_store
 from canhoto.core.models import ParserEntry, StatementRecord
 from canhoto.core.pdf_text import extract_text
+from canhoto.core.policy import clamp_batch_size
 from canhoto.parsers import loader as parser_loader
 from canhoto.parsers import scaffold as parser_scaffold_mod
 from canhoto.parsers.loader import ParserLoadError, ParserNotFoundError
@@ -461,6 +462,65 @@ def ingest(
         "inserted": total_inserted,
         "updated": total_updated,
         "files": files_out,
+    }
+
+
+def parse(
+    file: str | Path,
+    *,
+    root: Path | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """Dry-run extract + choose + parse; no archive and no DB writes.
+
+    Returns a capped JSON-serializable summary (meta + limited transaction
+    rows). Row cap uses agent-view batch policy (``absolute_max_batch_size``
+    hard ceiling; default ``max_batch_size``).
+
+    Raises:
+        FileNotFoundError: path does not exist
+        ParserNotFoundError: no enabled parser, or none claims the document
+        ParserLoadError: an enabled parser module fails to load
+        ValueError: extract/parse hard failure or invalid limit
+    """
+    data_dir = _ensure_data_dir(root)
+    cfg = core_config.load_config(data_dir)
+    parsers = parser_loader.load_enabled_parsers(cfg, root=data_dir)
+    if not parsers:
+        raise ParserNotFoundError(
+            "no enabled parser claimed this document (no enabled parsers registered)"
+        )
+
+    src = Path(file).expanduser()
+    if not src.is_file():
+        raise FileNotFoundError(f"file not found: {src}")
+
+    preview_limit = clamp_batch_size(limit, cfg.agent_view)
+    text = extract_text(src)
+    parser = parser_loader.choose_parser(text, parsers)
+    source_file = str(src.resolve())
+    parsed = parser.parse(text, source_file)
+
+    meta = parsed.meta.model_copy(update={"source_file": source_file})
+    all_txs = parsed.transactions
+    total = len(all_txs)
+    preview_txs = all_txs[:preview_limit]
+    truncated = total > preview_limit
+
+    return {
+        "ok": True,
+        "dry_run": True,
+        "path": source_file,
+        "parser_id": getattr(parser, "id", None),
+        "statement_type": str(meta.statement_type),
+        "institution": meta.institution,
+        "meta": meta.model_dump(mode="json"),
+        "transaction_count": total,
+        "preview_count": len(preview_txs),
+        "preview_limit": preview_limit,
+        "truncated": truncated,
+        "transactions": [tx.model_dump(mode="json") for tx in preview_txs],
+        "data_dir": str(data_dir.resolve()),
     }
 
 
