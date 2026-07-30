@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.  
 > **Read first:** `AGENTS.md`, `docs/ARCHITECTURE.md`.  
 > **Do not** continue the Sheets-first or “ship all bank parsers in package” designs.  
-> **Prior WIP snapshot:** branch `archive/2026-07-29-pre-engine-redesign` (reference only).
+> **Prior WIP snapshot:** branch `archive/2026-07-29-pre-engine-redesign` (reference only). Path catalog + porting rules: `docs/ARCHIVE_BRANCH.md`.
 
 **Product:** Canhoto — CLI `canhoto`, MCP `canhoto-mcp`, package `canhoto`, data `~/.canhoto` / `$CANHOTO_DATA_DIR`.
 
@@ -586,4 +586,4 @@ Must remain true:
 
 Work **phase by phase**. Do not start Phase 5 before Phase 0–4 guardrails and APIs exist.  
 Prefer one PR/commit series per task.  
-When stuck on old behavior, consult `archive/2026-07-29-pre-engine-redesign` instead of resurrecting Sheets into core.
+When stuck on old behavior, consult `docs/ARCHIVE_BRANCH.md` and branch `archive/2026-07-29-pre-engine-redesign` instead of resurrecting Sheets into core.
