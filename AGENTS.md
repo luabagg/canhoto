@@ -91,4 +91,4 @@ $FINANCE_DATA_DIR  or  ~/.finance-ingest/
 ## Done means
 
 Plan **Success criteria** in `docs/ARCHITECTURE.md` §11 and plan Phase 7 exit are satisfied; guardrail checklist in the plan still green.
-`
+
