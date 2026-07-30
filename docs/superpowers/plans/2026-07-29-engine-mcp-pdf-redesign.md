@@ -1,9 +1,11 @@
 # Engine + MCP + PDF Redesign — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.  
-> **Read first:** `AGENTS.md`, `docs/ARCHITECTURE.md`.  
+> **Read first:** `AGENTS.md` (**Day-1 reality**), `docs/ARCHITECTURE.md`.  
 > **Do not** continue the Sheets-first or “ship all bank parsers in package” designs.  
 > **Prior WIP snapshot:** branch `archive/2026-07-29-pre-engine-redesign` (reference only). Path catalog + porting rules: `docs/ARCHIVE_BRANCH.md`.
+>
+> **Dual state:** `main` still contains legacy runtime `src/finance_ingest/` + scripts `finance` / `finance-mcp`. This plan builds **Canhoto** (`src/canhoto/`, `canhoto` / `canhoto-mcp`). Docs win over legacy behavior. Do not assume `canhoto` CLI exists until you create it. Do not develop on the archive branch.
 
 **Product:** Canhoto — CLI `canhoto`, MCP `canhoto-mcp`, package `canhoto`, data `~/.canhoto` / `$CANHOTO_DATA_DIR`.
 

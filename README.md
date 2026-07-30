@@ -18,7 +18,16 @@ Canhoto is a personal finance **engine**: drop bank/card statements, let an agen
 
 ## Status
 
-Redesign is **documented**; runtime code on `main` may still use legacy `finance_*` package paths until plan phases land. Prior WIP: branch `archive/2026-07-29-pre-engine-redesign` ([catalog](docs/ARCHIVE_BRANCH.md)).
+**Dual state:** Canhoto is fully specified in docs; **runtime is still the old MVP** (`src/finance_ingest/`, CLI `finance` / `finance-mcp`). There is no `canhoto` console script until the implementation plan lands.
+
+| | Now | Target |
+|---|---|---|
+| Package | `finance_ingest` | `canhoto` |
+| CLI / MCP | `finance` / `finance-mcp` | `canhoto` / `canhoto-mcp` |
+| Redesign | docs only | Phases 0–7 in the plan |
+
+Implementers: **[`AGENTS.md`](AGENTS.md)** (Day-1 reality) → architecture → plan.  
+Prior richer WIP: branch `archive/2026-07-29-pre-engine-redesign` ([catalog](docs/ARCHIVE_BRANCH.md)).
 
 ## Target install (after package rename)
 

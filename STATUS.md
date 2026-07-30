@@ -2,10 +2,10 @@
 
 **Canonical design:** `docs/ARCHITECTURE.md`  
 **Implementation plan:** `docs/superpowers/plans/2026-07-29-engine-mcp-pdf-redesign.md`  
-**Agent bootstrap:** `AGENTS.md`  
+**Agent bootstrap:** `AGENTS.md` (**read Day-1 reality first**)  
 **Legacy code map:** `docs/ARCHIVE_BRANCH.md`
 
-## Name
+## Name (target)
 
 | | |
 |---|---|
@@ -14,22 +14,32 @@
 | MCP | `canhoto-mcp` |
 | Data | `~/.canhoto` / `$CANHOTO_DATA_DIR` |
 
+## Dual state (important)
+
+| | On `main` **now** |
+|---|---|
+| Docs | Canhoto architecture + phased plan |
+| Runtime | Legacy MVP: `src/finance_ingest/`, scripts `finance` / `finance-mcp` |
+| Redesign code | **Not started** (no `src/canhoto/`, no `tests/guardrails/`) |
+
+Agents: architecture wins; legacy is scaffolding to replace. Details in `AGENTS.md`.
+
 ## Branches
 
 | Branch | Meaning |
 |---|---|
-| `main` | Canhoto architecture + phased plan; legacy MVP code may still use old `finance_*` paths until redesign lands |
-| `archive/2026-07-29-pre-engine-redesign` | Frozen pre-redesign WIP (Itaú parsers, Sheets OAuth, expanded tests, draft plans) |
+| `main` | Canhoto docs + legacy MVP source — implement redesign here |
+| `archive/2026-07-29-pre-engine-redesign` | Frozen richer WIP (Itaú, Sheets OAuth, expanded tests) — reference only |
 
-## Direction (summary)
+## Direction
 
-- Distributable CLI package + optional host-spawned MCP (`canhoto-mcp`)
-- User/agent **Python statement parsers** in data dir (no required built-in banks)
-- SQLite ledger; **summary PDF** export v1; Sheets deferred as future exporter plugin
-- Agent loop: preview → parser → ingest → categorize → breakdown → PDF
-- Guardrails first (Phase 0): redaction, batch caps, MCP allowlist, no raw SQL
-- **Country-agnostic core**; locale defaults (e.g. BRL) are profile/config, not the kernel
+- Distributable CLI + host-spawned MCP  
+- User/agent Python statement parsers in data dir  
+- SQLite ledger; summary PDF v1; Sheets later as exporter plugin  
+- Agent loop: preview → parser → ingest → categorize → breakdown → PDF  
+- Guardrails first (Phase 0)  
+- Country-agnostic core; locale defaults are config  
 
-## Legacy note
+## Disk path
 
-Older “personal-finance-ingest / Mercado Pago + Sheets + fat MCP” behavior may still exist in the tree on `main`. Treat it as scaffolding to replace per the plan, not as the product contract.
+Project directory may be `~/development/canhoto` (renamed folder). Git history may still say `personal-finance-ingest`.

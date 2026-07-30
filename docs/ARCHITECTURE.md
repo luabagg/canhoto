@@ -5,6 +5,8 @@
 
 **Name:** *Canhoto* — the stub/counterfoil you keep (comprovante que fica com você). Not “left-handed.”
 
+**Dual state:** On `main`, this document is the contract; runtime code may still be legacy `src/finance_ingest/` until the implementation plan replaces it. See `AGENTS.md` § Day-1 reality. Do not treat existing `finance` CLI behavior as the product.
+
 This document is the product/architecture contract. Implementation order lives in:
 
 - `docs/superpowers/plans/2026-07-29-engine-mcp-pdf-redesign.md`

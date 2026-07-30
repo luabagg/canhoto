@@ -1,115 +1,209 @@
 # Agent bootstrap — Canhoto
 
-You are implementing (or extending) **Canhoto**, a local personal finance engine. Read this file completely before editing code.
+You are implementing **Canhoto**, a local personal finance engine. Read this file completely before editing code.
 
-**Canhoto** = the stub/counterfoil you keep (document sense). CLI: **`canhoto`**.
+**Canhoto** = the stub/counterfoil you keep (document sense). Target CLI/MCP: **`canhoto`** / **`canhoto-mcp`**.
+
+---
+
+## STOP — Day-1 reality (read before anything else)
+
+This repo is in a **deliberate dual state**. If you ignore this section you will thrash.
+
+| Layer | What exists **today** on `main` | What docs describe as **target** |
+|---|---|---|
+| Product name | Still `personal-finance-ingest` in `pyproject.toml` | **Canhoto** |
+| Python package | `src/finance_ingest/` only | `src/canhoto/` |
+| CLI script | `finance` | `canhoto` |
+| MCP script | `finance-mcp` | `canhoto-mcp` |
+| Data dir (legacy code) | `~/.finance-ingest` / `FINANCE_DATA_DIR` | `~/.canhoto` / `CANHOTO_DATA_DIR` |
+| Parsers | Hardcoded Mercado Pago account+card in package | User/agent plugins in data dir; no required builtins |
+| Sheets | `sheets.py` in tree | **Out of core** (future exporter only) |
+| Guardrails / `tests/guardrails/` | **Missing** | Phase 0 of the plan |
+| Summary PDF exporter | **Missing** | Phase 6 |
+| Canhoto redesign | **Docs only** (this file, ARCHITECTURE, plan) | Full runtime |
+
+**Source of truth for what to build:** `docs/ARCHITECTURE.md` + the implementation plan.  
+**Not source of truth:** behavior of existing `src/finance_ingest/*` (legacy MVP scaffolding).
+
+**Your job is not** “make the old CLI keep working as-is.”  
+**Your job is** execute the plan (Phase 0 → 7), replacing/migrating legacy code until runtime matches Canhoto.
+
+Repo path on disk may be `~/development/canhoto` while git history still mentions `personal-finance-ingest`. Fine.
+
+```text
+docs/ARCHITECTURE + plan  ──►  WHAT TO BUILD (wins on conflict)
+src/finance_ingest        ──►  OLD MVP (reference / delete / port)
+archive/* branch          ──►  RICHER OLD WIP (Itaú, Sheets tests) — see docs/ARCHIVE_BRANCH.md
+```
+
+---
 
 ## Read order (mandatory)
 
-1. This file (`AGENTS.md`)
-2. `docs/ARCHITECTURE.md` — product contract, identity, ports, guardrails, locale vs core
-3. `docs/superpowers/plans/2026-07-29-engine-mcp-pdf-redesign.md` — phased tasks
-4. `docs/ARCHIVE_BRANCH.md` — when (and only when) you need old reference code
-5. Branch `archive/2026-07-29-pre-engine-redesign` — frozen WIP; **reference only**
+1. This file (`AGENTS.md`) — especially **Day-1 reality** above  
+2. `docs/ARCHITECTURE.md` — product contract  
+3. `docs/superpowers/plans/2026-07-29-engine-mcp-pdf-redesign.md` — phased tasks  
+4. `docs/ARCHIVE_BRANCH.md` — only when porting algorithms/fixtures from old WIP  
+5. Branch `archive/2026-07-29-pre-engine-redesign` — **reference only**, never implement on it  
 
-Do **not** treat legacy README Sheets flow or old `STATUS.md` history as the target design.
+Do **not** treat Sheets-centric flows in legacy modules as the product contract.
 
-## Identity (use these names in new work)
+---
+
+## Identity (target — use in **new** code and docs)
 
 | Layer | Value |
 |---|---|
 | Product | Canhoto |
 | CLI | `canhoto` |
 | MCP binary | `canhoto-mcp` |
-| Package import (target) | `canhoto` |
+| Import package | `canhoto` |
 | Data dir | `~/.canhoto` / `$CANHOTO_DATA_DIR` |
 | DB | `canhoto.db` |
 
-Legacy in tree until rename tasks run: `finance_ingest`, `finance`, `finance-mcp`, `~/.finance-ingest`. **Architecture wins** — migrate toward Canhoto names; do not immortalize legacy strings in new modules.
+Do **not** add new public `finance_*` names. While migrating, temporary shims are OK only if the plan task says so; prefer clean cut.
+
+---
 
 ## Mission
 
 Build a distributable tool:
 
 - **CLI** `canhoto` — init, doctor, parsers, ingest, categorize, review, export PDF  
-- **MCP** `canhoto-mcp` — host-spawned stdio tools for full agent loop  
-- **User Python parsers** in `~/.canhoto/parsers/` (no mandatory bank parsers in the package)  
+- **MCP** `canhoto-mcp` — host-spawned stdio domain tools  
+- **User Python parsers** in `~/.canhoto/parsers/` (no mandatory bank parsers in the wheel)  
 - **SQLite** ledger as system of record  
 - **Summary PDF** export v1  
-- **Guardrails** — domain tools + redacted review/aggregates; **not** raw SQL or unbounded ledgers  
-- **Country-agnostic core** — BR defaults allowed as profile; parsers work for any bank/country  
+- **Guardrails** — redacted review + aggregates; never raw SQL / unbounded ledger dumps  
+- **Country-agnostic core** — locale defaults (e.g. BRL) are config/profile, not the kernel  
+
+---
 
 ## Hard rules
 
 | Do | Do not |
 |---|---|
-| Follow plan phases 0 → 7 in order | Start with MCP UI before Phase 0 contracts |
-| TDD for core behavior + guardrails | Ship Sheets/Google in core v1 |
-| Keep money under `CANHOTO_DATA_DIR` / `~/.canhoto` | Commit real statements, tokens, DBs |
-| MCP tools ⊆ allowlist in plan | Add `sql_query` or full ledger dump tools |
+| Follow plan phases **0 → 7** in order | “Just rename files” and call the redesign done |
+| Start at **Phase 0** (contracts + guardrail tests) | Start by polishing Sheets or fat MCP |
+| Treat architecture/plan as winning | Copy legacy MCP tool list or Sheets into core |
+| Keep money out of git | Commit statements, tokens, DB files |
+| MCP tools ⊆ plan allowlist | Add `sql_query` or full ledger dump tools |
 | Parser enable only after test | Auto-download parsers from the network |
 | PDF summary only in v1 | Full transaction listing PDF in v1 |
-| Keep core locale-pluggable | Hardcode PIX/BRL/Itaú as the only path |
-| Consult archive via `docs/ARCHIVE_BRANCH.md` | Merge archive branch wholesale into main |
-| Use Canhoto / `canhoto` in new docs & APIs | Introduce new `finance_*` public names |
+| Locale-pluggable rules | Hardcode PIX/BRL/Itaú as the only path |
+| Use `docs/ARCHIVE_BRANCH.md` to port | `git checkout` archive and develop there |
+| Delete or quarantine dead legacy | Leave two competing products in `src/` forever |
 
-## Repo state you may see
+---
 
-- `main` — Canhoto architecture + implementation plan; **legacy MVP code** may still use `finance_ingest` until redesign tasks migrate it  
-- `archive/2026-07-29-pre-engine-redesign` — frozen WIP (Itaú, Sheets, expanded tests). **Reference only**
+## What is actually in the tree right now
+
+### Present (legacy MVP)
+
+```text
+src/finance_ingest/
+  cli.py, config.py, models.py, categorize.py, service.py, store.py
+  pdf_text.py, mcp_server.py, sheets.py
+  parsers/mercadopago_account.py, mercadopago_card.py, __init__.py
+tests/test_parsers.py, test_service_store.py, fixtures/mercadopago-*
+pyproject.toml  → name personal-finance-ingest, scripts finance / finance-mcp
+```
+
+### Present (Canhoto docs — implement against these)
+
+```text
+AGENTS.md
+docs/ARCHITECTURE.md
+docs/ARCHIVE_BRANCH.md
+docs/superpowers/plans/2026-07-29-engine-mcp-pdf-redesign.md
+STATUS.md
+README.md   # target UX; not proof runtime exists
+```
+
+### Absent until you build them
+
+- `src/canhoto/`
+- `tests/guardrails/`
+- Plugin parser loader / scaffold / enable flow  
+- Summary PDF exporter  
+- `canhoto` / `canhoto-mcp` console scripts  
+
+### Archive branch (not checked out)
+
+Richer pre-redesign WIP (Itaú parsers, google_auth, more tests). Catalog: `docs/ARCHIVE_BRANCH.md`.
+
+---
+
+## Branches
+
+| Branch | Role |
+|---|---|
+| `main` | Canhoto **docs** + legacy **MVP code** — implement here |
+| `archive/2026-07-29-pre-engine-redesign` | Frozen lab snapshot — read via `git show`, don’t develop on it |
 
 ```bash
 git branch -v
-# prefer path catalog:
-# docs/ARCHIVE_BRANCH.md
 git show archive/2026-07-29-pre-engine-redesign:src/finance_ingest/store.py | head
 ```
 
+---
+
 ## Commands
 
-```bash
-# setup (adjust when pyproject becomes canhoto)
-uv sync --locked --extra dev   # Sheets extra not required for v1
+### Today (legacy package still installed that way)
 
-# quality gate (must pass before you stop a phase)
-uv run pytest tests/guardrails -q
+```bash
+cd ~/development/canhoto   # or your clone path
+uv sync --extra dev        # lockfile may be incomplete on main; unlock/sync as needed
 uv run pytest -q
 uv run ruff check .
 uv run mypy src
+# legacy entrypoints still:
+#   uv run finance --help
+#   uv run finance-mcp
 ```
 
-Target UX after rename:
+### After rename tasks (target)
 
 ```bash
-canhoto init
-canhoto doctor
-canhoto parsers scaffold --id demo_card --type card --institution demo
-canhoto ingest ~/statements/*.pdf
-canhoto review --month 2026-06 --json
-canhoto export pdf 2026-06
+uv run pytest tests/guardrails -q
+uv run pytest -q
+uv run canhoto --help
+uv run canhoto-mcp
 ```
+
+`tests/guardrails` will **fail/missing until Phase 0** — creating that suite *is* Phase 0.
+
+---
 
 ## Implementation pattern
 
-1. Open the **current phase** in the plan; finish its tasks before the next phase.  
-2. Phase **0 first** (contracts + guardrail tests) even if you want the agent demo soon.  
+1. Open the **current phase** in the plan; finish it before the next.  
+2. **Phase 0 first** — models/policy/redaction/allowlist tests even if Hermes demo feels urgent.  
 3. Each task: failing test → code → pass → commit.  
-4. After each phase: run full quality gate.  
-5. If architecture conflicts with legacy code, **architecture wins** — delete or quarantine legacy.  
-6. Prefer package/module name `canhoto` in new layout (`src/canhoto/…`).
+4. When legacy conflicts with architecture, **delete or move legacy**, don’t dual-maintain forever.  
+5. Prefer greenfield `src/canhoto/` + thin deprecation of `finance_ingest`, or in-place migrate with rename in Phase 1 — pick one approach early and stick to it (plan allows either; don’t half-do both).  
+6. Port useful bits from archive (store cents, categorize ideas, fixtures) using `docs/ARCHIVE_BRANCH.md`.  
 
-## Agent acceptance sketch
+---
+
+## Agent acceptance sketch (end state)
 
 ```text
 preview statement → write parser → test → enable → ingest
 → run_rules → review_batch / set_categories → month_breakdown → export_pdf
 ```
 
+---
+
 ## Security note (parser option A)
 
-User/agent-written Python parsers run as trusted local code. Enforce: data-dir only, test-before-enable, MCP `parser_write` gated by `allow_parser_writes`. Prefer timeout around parse execution when you wire ingest.
+User/agent-written Python parsers are trusted local code. Enforce: data-dir only, test-before-enable, MCP `parser_write` gated by `allow_parser_writes`. Prefer timeout around parse execution.
 
-## Where config lives
+---
+
+## Config location (target)
 
 ```text
 $CANHOTO_DATA_DIR  or  ~/.canhoto/
@@ -121,6 +215,8 @@ $CANHOTO_DATA_DIR  or  ~/.canhoto/
   fixtures/
 ```
 
+---
+
 ## Done means
 
-Plan **Success criteria** in `docs/ARCHITECTURE.md` §12 and plan Phase 7 exit are satisfied; guardrail checklist in the plan still green.
+`docs/ARCHITECTURE.md` success criteria + plan Phase 7 exit are met, and **runtime** entrypoints are `canhoto` / `canhoto-mcp` with guardrail tests green — not merely docs updated.
