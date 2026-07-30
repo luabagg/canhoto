@@ -6,10 +6,10 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from canhoto.core.models import AgentViewConfig, ReviewItem
+from canhoto.core.models import AgentViewConfig, ReviewItem, Transaction
 
 
-def merchant_display(tx: Any) -> str:
+def merchant_display(tx: Transaction) -> str:
     """Preferred merchant label for agent review (normalized, else raw)."""
     normalized = getattr(tx, "merchant_normalized", None)
     if normalized is not None:
@@ -24,7 +24,7 @@ def merchant_display(tx: Any) -> str:
     return ""
 
 
-def to_review_item(tx: Any, view: AgentViewConfig) -> ReviewItem:
+def to_review_item(tx: Transaction, view: AgentViewConfig) -> ReviewItem:
     """Project a transaction-like object into a redacted ``ReviewItem``.
 
     Never copies raw description, source paths, operation ids, balances,

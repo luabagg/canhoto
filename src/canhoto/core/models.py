@@ -7,14 +7,40 @@ paths, operation ids, balances, account ids, metadata bags).
 
 from __future__ import annotations
 
+from datetime import date, datetime
+from decimal import Decimal
 from enum import Enum
+from typing import Any, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class StatementType(str, Enum):
     ACCOUNT = "account"
     CARD = "card"
+
+
+class Transaction(Protocol):
+    """Structural ledger row shape consumed by agent-view redaction.
+
+    Not a concrete SQLite/store model. Attributes match exactly what
+    ``merchant_display`` / ``to_review_item`` read; concrete ledger types
+    land in later core/store work and should satisfy this protocol.
+    """
+
+    id: Any
+    date: date | datetime | str | Any
+    amount: Decimal | int | float | str | None | Any
+    currency: str | None | Any
+    merchant_normalized: str | None | Any
+    merchant_raw: str | None | Any
+    source_kind: Any
+    institution: str | None | Any
+    category: str | None | Any
+    kind: str | None | Any
+    confidence: float | int | None | Any
+    review_reason: str | None | Any
+    installment: str | None | Any
 
 
 class AgentViewConfig(BaseModel):
@@ -29,6 +55,13 @@ class AgentViewConfig(BaseModel):
     expense_only: bool = True
     allow_parser_writes: bool = False
     preview_max_chars: int = 20_000
+
+    @field_validator("max_batch_size", "absolute_max_batch_size")
+    @classmethod
+    def _batch_caps_must_be_positive(cls, value: int) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError("batch size caps must be positive integers")
+        return value
 
 
 class ParserEntry(BaseModel):

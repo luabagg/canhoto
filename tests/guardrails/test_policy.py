@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from canhoto.core.models import AgentViewConfig
 from canhoto.core.policy import assert_month, clamp_batch_size
@@ -52,3 +53,15 @@ def test_clamp_batch_size_rejects_non_positive() -> None:
         clamp_batch_size(0, view)
     with pytest.raises(ValueError, match="batch size"):
         clamp_batch_size(-3, view)
+
+
+def test_agent_view_config_rejects_non_positive_batch_caps() -> None:
+    """Configured caps must be positive so clamp_batch_size cannot return <= 0."""
+    with pytest.raises(ValidationError):
+        AgentViewConfig(max_batch_size=0)
+    with pytest.raises(ValidationError):
+        AgentViewConfig(max_batch_size=-1)
+    with pytest.raises(ValidationError):
+        AgentViewConfig(absolute_max_batch_size=0)
+    with pytest.raises(ValidationError):
+        AgentViewConfig(absolute_max_batch_size=-5)
