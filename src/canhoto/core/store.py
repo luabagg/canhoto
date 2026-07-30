@@ -80,17 +80,6 @@ CREATE INDEX IF NOT EXISTS idx_transactions_needs_review ON transactions(needs_r
 CREATE INDEX IF NOT EXISTS idx_transactions_month_review ON transactions(month, needs_review);
 """
 
-# Classification columns preserved on same-id re-ingest (facts-only refresh).
-_CLASSIFICATION_COLS = (
-    "category",
-    "kind",
-    "is_expense",
-    "needs_review",
-    "confidence",
-    "review_reason",
-)
-
-
 @contextmanager
 def connect(path: Path | None = None) -> Iterator[sqlite3.Connection]:
     """Open canhoto.db, ensure schema, yield a Row-factory connection."""
@@ -234,6 +223,8 @@ def _upsert_transactions(
             continue
 
         if preserve_classification:
+            # Facts-only refresh: keep classification AND merchant_normalized
+            # (may have been set by rules, memory, or agent patches).
             conn.execute(
                 """
                 UPDATE transactions SET
@@ -242,7 +233,6 @@ def _upsert_transactions(
                   currency = :currency,
                   description = :description,
                   merchant_raw = :merchant_raw,
-                  merchant_normalized = :merchant_normalized,
                   source_kind = :source_kind,
                   institution = :institution,
                   source_file = :source_file,
@@ -497,7 +487,8 @@ def apply_classifications(
             if patch.confidence is not None:
                 updates.append("confidence = ?")
                 params.append(patch.confidence)
-            if patch.review_reason is not None:
+            # Explicit null clears the stored reason (fields_set distinguishes omit).
+            if "review_reason" in patch.model_fields_set:
                 updates.append("review_reason = ?")
                 params.append(patch.review_reason)
             if patch.merchant_normalized is not None:

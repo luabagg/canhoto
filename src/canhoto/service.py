@@ -93,10 +93,14 @@ def doctor(root: Path | None = None) -> dict[str, Any]:
     db_file = core_config.db_path(data_dir)
     db_openable = False
     pending_review = 0
-    if writable:
+    if not writable:
+        ok = False
+        checks.append("skip: db (data_dir not writable)")
+    elif not db_file.is_file():
+        # Doctor is read-only: do not create the DB just to probe it.
+        checks.append("skip: db (not created yet — run ingest or init+work)")
+    else:
         try:
-            core_store.ensure_schema(db_file)
-            # Prove a real read works after schema ensure.
             with core_store.connect(db_file) as conn:
                 conn.execute("SELECT 1").fetchone()
             db_openable = True
@@ -106,9 +110,6 @@ def doctor(root: Path | None = None) -> dict[str, Any]:
         except (OSError, sqlite3.Error) as exc:
             ok = False
             checks.append(f"error: db_not_openable ({type(exc).__name__})")
-    else:
-        ok = False
-        checks.append("skip: db (data_dir not writable)")
 
     return {
         "ok": ok,
@@ -264,7 +265,11 @@ def parser_test(
         transaction_count = len(result.transactions)
         statement_type = str(result.meta.statement_type)
         institution = result.meta.institution
-        ok = True
+        if transaction_count <= 0:
+            error = "parse returned zero transactions"
+            ok = False
+        else:
+            ok = True
     except (ParserLoadError, ParserNotFoundError, OSError, ValueError, RuntimeError) as exc:
         error = f"{type(exc).__name__}: {exc}"
     except Exception as exc:  # noqa: BLE001 — stamp any plugin failure
@@ -472,65 +477,6 @@ def ingest(
         "inserted": total_inserted,
         "updated": total_updated,
         "files": files_out,
-    }
-
-
-def parse(
-    file: str | Path,
-    *,
-    root: Path | None = None,
-    limit: int | None = None,
-) -> dict[str, Any]:
-    """Dry-run extract + choose + parse; no archive and no DB writes.
-
-    Returns a capped JSON-serializable summary (meta + limited transaction
-    rows). Row cap uses agent-view batch policy (``absolute_max_batch_size``
-    hard ceiling; default ``max_batch_size``).
-
-    Raises:
-        FileNotFoundError: path does not exist
-        ParserNotFoundError: no enabled parser, or none claims the document
-        ParserLoadError: an enabled parser module fails to load
-        ValueError: extract/parse hard failure or invalid limit
-    """
-    data_dir = _ensure_data_dir(root)
-    cfg = core_config.load_config(data_dir)
-    parsers = parser_loader.load_enabled_parsers(cfg, root=data_dir)
-    if not parsers:
-        raise ParserNotFoundError(
-            "no enabled parser claimed this document (no enabled parsers registered)"
-        )
-
-    src = Path(file).expanduser()
-    if not src.is_file():
-        raise FileNotFoundError(f"file not found: {src}")
-
-    preview_limit = clamp_batch_size(limit, cfg.agent_view)
-    text = extract_text(src)
-    parser = parser_loader.choose_parser(text, parsers)
-    source_file = str(src.resolve())
-    parsed = parser.parse(text, source_file)
-
-    meta = parsed.meta.model_copy(update={"source_file": source_file})
-    all_txs = parsed.transactions
-    total = len(all_txs)
-    preview_txs = all_txs[:preview_limit]
-    truncated = total > preview_limit
-
-    return {
-        "ok": True,
-        "dry_run": True,
-        "path": source_file,
-        "parser_id": getattr(parser, "id", None),
-        "statement_type": str(meta.statement_type),
-        "institution": meta.institution,
-        "meta": meta.model_dump(mode="json"),
-        "transaction_count": total,
-        "preview_count": len(preview_txs),
-        "preview_limit": preview_limit,
-        "truncated": truncated,
-        "transactions": [tx.model_dump(mode="json") for tx in preview_txs],
-        "data_dir": str(data_dir.resolve()),
     }
 
 

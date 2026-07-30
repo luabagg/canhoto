@@ -6,7 +6,6 @@ Package console scripts land in Phase 7. Until then, invoke via::
     python -m canhoto.cli doctor
     python -m canhoto.cli parsers list
     python -m canhoto.cli ingest path/to/statement.txt
-    python -m canhoto.cli parse path/to/statement.txt
     python -m canhoto.cli review --month YYYY-MM --json
     python -m canhoto.cli categorize apply --file patches.json
     python -m canhoto.cli breakdown --month YYYY-MM
@@ -53,17 +52,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Statement file paths (.txt or .pdf)",
     )
 
-    parse_p = sub.add_parser(
-        "parse",
-        help="Dry-run extract+parse; capped JSON summary, no DB write",
-    )
-    parse_p.add_argument("file", help="Statement file path (.txt or .pdf)")
-    parse_p.add_argument(
-        "--limit",
-        type=int,
-        default=None,
-        help="Max preview rows (clamped by agent-view batch caps)",
-    )
 
     parsers_p = sub.add_parser("parsers", help="Manage user/plugin statement parsers")
     parsers_sub = parsers_p.add_subparsers(dest="parsers_cmd", required=True)
@@ -206,10 +194,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0 if report.get("ok", False) else 1
     if args.cmd == "ingest":
         return _run_service_cmd(lambda: service.ingest(args.paths))
-    if args.cmd == "parse":
-        return _run_service_cmd(
-            lambda: service.parse(args.file, limit=args.limit)
-        )
     if args.cmd == "parsers":
         return _run_parsers(args)
     if args.cmd == "review":

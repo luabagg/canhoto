@@ -155,6 +155,21 @@ def test_parser_enable_fails_after_failed_test(data_home: Path) -> None:
     assert cfg.parsers[0].last_test_ok is False
 
 
+def test_parser_test_fails_on_empty_transactions(data_home: Path) -> None:
+    """Scaffold stubs return zero rows — must not stamp last_test_ok."""
+    service.parser_scaffold("demo_card", "card", "demo", root=data_home)
+    sample = data_home / "fixtures" / "sample.txt"
+    sample.write_text("anything\n", encoding="utf-8")
+
+    test_result = service.parser_test("demo_card", sample, root=data_home)
+    assert test_result["ok"] is False
+    assert test_result["last_test_ok"] is False
+    assert test_result["transaction_count"] == 0
+    assert "zero" in (test_result.get("last_test_error") or "").lower()
+    with pytest.raises(ValueError, match="test"):
+        service.parser_enable("demo_card", root=data_home)
+
+
 def test_parser_enable_succeeds_after_ok_test(data_home: Path) -> None:
     service.parser_scaffold("demo_card", "card", "demo", root=data_home)
     service.parser_write("demo_card", _WORKING_PARSER, root=data_home)

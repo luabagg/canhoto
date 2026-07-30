@@ -66,13 +66,15 @@ def test_doctor_on_fresh_init(data_home: Path) -> None:
     assert report["config_present"] is True
     assert report["parsers_enabled"] == 0
     assert report["parsers_disabled"] == 0
-    assert report["db_openable"] is True
+    # Doctor is read-only: fresh init has no DB yet.
+    assert report["db_openable"] is False
     assert report["pending_review"] == 0
-    # Opening the DB for the check may create the schema file; that is fine.
+    assert not db_path().exists()
     assert isinstance(report["ok"], bool)
     assert report["ok"] is True
     assert "checks" in report
     assert isinstance(report["checks"], list)
+    assert any("db" in c.lower() and c.startswith("skip") for c in report["checks"])
 
 
 def test_doctor_counts_enabled_disabled_parsers(data_home: Path) -> None:
@@ -158,7 +160,7 @@ def test_cli_init_and_doctor_json(
     assert doc_payload["config_present"] is True
     assert doc_payload["parsers_enabled"] == 0
     assert doc_payload["parsers_disabled"] == 0
-    assert doc_payload["db_openable"] is True
+    assert doc_payload["db_openable"] is False
     assert doc_payload["pending_review"] == 0
     assert doc_payload["ok"] is True
 

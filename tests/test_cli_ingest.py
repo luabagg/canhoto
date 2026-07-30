@@ -1,4 +1,4 @@
-"""Focused CLI tests for ingest + parse dry-run (Task 3.2)."""
+"""Focused CLI tests for ingest."""
 
 from __future__ import annotations
 
@@ -79,50 +79,3 @@ def test_cli_ingest_writes_ledger(
     archived = Path(payload["files"][0]["archived_path"])
     assert archived.is_file()
     assert archived.parent == (data_home / "raw").resolve()
-
-
-def test_cli_parse_dry_run_no_db_write(
-    data_home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    _install_demo_parser(data_home, enabled=True)
-    statement = _copy_fixture(tmp_path)
-    db = core_config.db_path(data_home)
-    raw_dir = data_home / "raw"
-
-    assert cli_main(["parse", str(statement)]) == 0
-    payload = json.loads(capsys.readouterr().out)
-
-    assert payload["ok"] is True
-    assert payload["dry_run"] is True
-    assert payload["parser_id"] == "demo_line"
-    assert payload["transaction_count"] == 3
-    assert payload["preview_count"] == 3
-    assert payload["truncated"] is False
-    assert payload["institution"] == "Demo Bank"
-    assert "meta" in payload
-    assert len(payload["transactions"]) == 3
-    merchants = {row["merchant_raw"] for row in payload["transactions"]}
-    assert merchants == {"COFFEE SHOP", "PAYROLL", "STREAMING"}
-
-    # Dry-run must not create ledger DB or archive raw bytes.
-    assert not db.exists()
-    assert list(raw_dir.iterdir()) == []
-
-
-def test_cli_parse_respects_preview_limit(
-    data_home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    _install_demo_parser(data_home, enabled=True)
-    statement = _copy_fixture(tmp_path)
-
-    assert cli_main(["parse", str(statement), "--limit", "1"]) == 0
-    payload = json.loads(capsys.readouterr().out)
-
-    assert payload["ok"] is True
-    assert payload["transaction_count"] == 3
-    assert payload["preview_count"] == 1
-    assert payload["preview_limit"] == 1
-    assert payload["truncated"] is True
-    assert len(payload["transactions"]) == 1
-    assert payload["transactions"][0]["merchant_raw"] == "COFFEE SHOP"
-    assert not core_config.db_path(data_home).exists()

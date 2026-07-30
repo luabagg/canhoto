@@ -31,8 +31,6 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.10",
 ]
-# Legacy Google Sheets path is intentionally NOT a default extra.
-# A future exporter plugin may reintroduce Sheets outside core.
 
 [project.scripts]
 canhoto = "canhoto.cli:main"
@@ -40,7 +38,7 @@ canhoto-mcp = "canhoto.mcp.server:main"
 
 [project.urls]
 Homepage = "https://github.com/luanbaggio/canhoto"
-Documentation = "https://github.com/luanbaggio/canhoto/blob/main/docs/ARCHITECTURE.md"
+Documentation = "https://github.com/luanbaggio/canhoto/blob/main/README.md"
 
 [build-system]
 requires = ["hatchling"]
@@ -54,10 +52,8 @@ include = [
   "src/canhoto",
   "tests",
   "examples",
-  "docs",
   "README.md",
   "AGENTS.md",
-  "STATUS.md",
   "pyproject.toml",
 ]
 
@@ -72,7 +68,7 @@ filterwarnings = [
 target-version = "py311"
 line-length = 100
 src = ["src/canhoto", "tests"]
-extend-exclude = ["src/finance_ingest", "examples", ".venv", "dist"]
+extend-exclude = ["examples", ".venv", "dist"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
@@ -84,4 +80,3 @@ packages = ["canhoto"]
 ignore_missing_imports = true
 warn_unused_ignores = true
 check_untyped_defs = true
-exclude = ["src/finance_ingest/"]

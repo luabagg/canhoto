@@ -104,7 +104,8 @@ def test_upsert_preserves_classification_on_reingest(tmp_path: Path) -> None:
                 is_expense=True,
                 needs_review=False,
                 confidence=0.95,
-                review_reason=None,
+                review_reason="agent",
+                merchant_normalized="CAFE",
             )
         ],
         path=path,
@@ -118,6 +119,7 @@ def test_upsert_preserves_classification_on_reingest(tmp_path: Path) -> None:
         needs_review=True,
         confidence=0.0,
         merchant_raw="CAFE CENTRAL LTD",
+        merchant_normalized="SHOULD_NOT_OVERWRITE",
     )
     result2 = upsert_transactions([reingest], path=path)
     assert result2.inserted == 0
@@ -128,11 +130,22 @@ def test_upsert_preserves_classification_on_reingest(tmp_path: Path) -> None:
     assert stored.description == "Cafe Central updated OCR"
     assert stored.amount_minor == -4300
     assert stored.merchant_raw == "CAFE CENTRAL LTD"
-    # classification preserved
+    # classification + normalized merchant preserved
     assert stored.category == "Eating"
     assert stored.kind == "expense"
     assert stored.needs_review is False
     assert stored.confidence == 0.95
+    assert stored.merchant_normalized == "CAFE"
+    assert stored.review_reason == "agent"
+
+    # Explicit null clears review_reason
+    apply_classifications(
+        [ClassificationPatch(id="tx-1", review_reason=None)],
+        path=path,
+    )
+    cleared = get_transaction("tx-1", path=path)
+    assert cleared is not None
+    assert cleared.review_reason is None
 
 
 def test_statement_upsert_and_link_idempotent(tmp_path: Path) -> None:
