@@ -441,7 +441,7 @@ No transaction list field.
 
 Register **only** `MCP_TOOL_ALLOWLIST` tools. Each tool calls `service.*`.
 
-`parser_write` / `parser_enable` enforce `allow_parser_writes` where applicable (`enable` may stay allowed if test passed and user wants Hermes autonomy — default: enable allowed, write gated).
+`parser_write` / `parser_enable` enforce `allow_parser_writes` where applicable (`enable` may stay allowed if test passed and user wants full agent autonomy — default: enable allowed, write gated).
 
 `statement_preview(path)`:
 
@@ -499,7 +499,7 @@ MCP: `export_pdf(month) -> {path, bytes or size}`
 
 ### Task 7.1 — Package & README
 
-- README: install via `uv tool install` / `pipx`, data dir, Hermes MCP snippet, parser authoring pointer, privacy notes.
+- README: install via `uv tool install canhoto` / `pipx`, data dir, MCP host snippet (`coto-mcp`), parser authoring pointer, privacy notes.
 - `pyproject.toml`: description, scripts, deps; Sheets extra **removed or clearly legacy-not-installed**.
 - Point STATUS.md at ARCHITECTURE.md.
 
