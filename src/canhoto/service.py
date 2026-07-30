@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Sequence
 
+from canhoto.core import categorize as core_categorize
 from canhoto.core import config as core_config
 from canhoto.core import store as core_store
 from canhoto.core.models import ParserEntry, StatementRecord
@@ -602,3 +603,45 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
     )
+
+
+# --- Categorization (deterministic rules) ---
+
+
+def run_rules(
+    month: str,
+    *,
+    root: Path | None = None,
+    own_name_markers: list[str] | None = None,
+) -> dict[str, Any]:
+    """Apply deterministic rules to all ledger rows in ``month`` (YYYY-MM).
+
+    Uses ``AppConfig.own_name_markers`` when ``own_name_markers`` is omitted.
+    Never returns full ledger rows — only counts and pending-review total.
+    """
+    data_dir = _ensure_data_dir(root)
+    cfg = core_config.load_config(data_dir)
+    db_file = core_config.db_path(data_dir)
+    core_store.ensure_schema(db_file)
+
+    markers = (
+        list(own_name_markers)
+        if own_name_markers is not None
+        else list(cfg.own_name_markers)
+    )
+    result = core_categorize.run_rules_for_month(
+        month,
+        path=db_file,
+        own_name_markers=markers,
+    )
+    pending = core_store.count_pending_review(month=month, path=db_file)
+    return {
+        "ok": True,
+        "month": month,
+        "applied": result.applied,
+        "missing": list(result.missing),
+        "pending_review": pending,
+        "own_name_markers_count": len(markers),
+        "data_dir": str(data_dir.resolve()),
+        "db_path": str(db_file),
+    }

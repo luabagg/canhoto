@@ -83,6 +83,9 @@ class AppConfig(BaseModel):
     parsers_dir: str = "parsers"
     parsers: list[ParserEntry] = Field(default_factory=list)
     agent_view: AgentViewConfig = Field(default_factory=AgentViewConfig)
+    # User-local markers for self-transfer detection. Package default is empty
+    # (no personal names shipped in the wheel).
+    own_name_markers: list[str] = Field(default_factory=list)
 
 
 class ReviewItem(BaseModel):

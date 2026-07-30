@@ -101,6 +101,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     parsers_sub.add_parser("list", help="List registered parsers and test/enable status")
 
+    cat_p = sub.add_parser("categorize", help="Classify ledger rows")
+    cat_sub = cat_p.add_subparsers(dest="categorize_cmd", required=True)
+    rules_p = cat_sub.add_parser(
+        "rules",
+        help="Run deterministic rules for a month (YYYY-MM)",
+    )
+    rules_p.add_argument(
+        "--month",
+        required=True,
+        help="Target month as YYYY-MM",
+    )
+
     return parser
 
 
@@ -123,6 +135,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.cmd == "parsers":
         return _run_parsers(args)
+    if args.cmd == "categorize":
+        return _run_categorize(args)
 
     parser.error(f"unknown command: {args.cmd}")
     return 2
@@ -183,6 +197,15 @@ def _run_parsers(args: argparse.Namespace) -> int:
         return 1
 
     _print_json({"ok": False, "error": f"unknown parsers command: {args.parsers_cmd}"})
+    return 2
+
+
+def _run_categorize(args: argparse.Namespace) -> int:
+    if args.categorize_cmd == "rules":
+        return _run_service_cmd(lambda: service.run_rules(args.month))
+    _print_json(
+        {"ok": False, "error": f"unknown categorize command: {args.categorize_cmd}"}
+    )
     return 2
 
 
