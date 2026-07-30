@@ -5,7 +5,9 @@
 > **Do not** continue the Sheets-first or “ship all bank parsers in package” designs.  
 > **Prior WIP snapshot:** branch `archive/2026-07-29-pre-engine-redesign` (reference only).
 
-**Goal:** Rebuild the product as a distributable local engine: user/agent Python statement parsers, SQLite ledger, Hermes-friendly MCP domain tools, summary PDF export, with guardrails enforced in code and tests.
+**Product:** Canhoto — CLI `coto`, MCP `coto-mcp`, package `canhoto`, data `~/.canhoto` / `$CANHOTO_DATA_DIR`.
+
+**Goal:** Rebuild the product as a distributable local engine: user/agent Python statement parsers, SQLite ledger, agent-host MCP (e.g. Hermes) domain tools, summary PDF export, with guardrails enforced in code and tests.
 
 **Architecture:** Ports-and-adapters. Core ledger + policy; `StatementParser` and `Exporter` registries; CLI + MCP as façades. No raw SQL MCP. No Sheets in core.
 
@@ -13,8 +15,8 @@
 
 ## Global Constraints
 
-- Data dir: `FINANCE_DATA_DIR` or `~/.finance-ingest`.
-- Package scripts remain `finance` and `finance-mcp` unless rename is explicitly approved.
+- Data dir: `CANHOTO_DATA_DIR` or `~/.canhoto`.
+- Package scripts are `coto` and `coto-mcp` (product **Canhoto**).
 - No Google API deps on the default/non-extra install path for v1.
 - No required built-in Itaú/MP parsers in the distributed runtime package.
 - MCP: domain tools only; never `sql_query` / arbitrary SELECT.
@@ -24,7 +26,10 @@
 - Guardrail tests are mandatory before declaring a phase done.
 - Prefer deleting Sheets coupling over maintaining dead code paths on `main`.
 - TDD: failing test → implement → pass → commit per task.
-- Do not commit secrets, real extratos, or `~/.finance-ingest` contents.
+- Do not commit secrets, real statements, or `~/.canhoto` contents.
+
+- **Canhoto rename:** new modules use `canhoto` / `coto`; do not add new public `finance_*` names.
+- Core remains country-agnostic; BRL/PIX-style rules belong in default locale/profile, not the kernel.
 
 ---
 
@@ -37,7 +42,7 @@
 | 2 | Parser port | Registry, loader, scaffold, test, enable |
 | 3 | Ingest | File → extract → parse → SQLite |
 | 4 | Categorize | Rules + review batches + patches + optional merchant memory |
-| 5 | MCP | Hermes full-loop tools wired to service |
+| 5 | MCP | agent full-loop tools wired to service |
 | 6 | PDF export | Summary `ReportBundle` → PDF |
 | 7 | Distribution polish | Package metadata, README, example parser docs, CI |
 
@@ -51,20 +56,20 @@ Each phase ends with: tests green, ruff/mypy clean (as configured), commit(s).
 |---|---|
 | `AGENTS.md` | Agent bootstrap (already on main) |
 | `docs/ARCHITECTURE.md` | Product contract |
-| `src/finance_ingest/core/models.py` | Domain models |
-| `src/finance_ingest/core/config.py` | Data dir + config.json |
-| `src/finance_ingest/core/store.py` | SQLite |
-| `src/finance_ingest/core/policy.py` | AgentView + batch clamps |
-| `src/finance_ingest/core/redaction.py` | ReviewItem projection |
-| `src/finance_ingest/core/pipeline.py` | Orchestration helpers |
-| `src/finance_ingest/parsers/protocol.py` | `StatementParser` Protocol |
-| `src/finance_ingest/parsers/loader.py` | Load/enable from data dir |
-| `src/finance_ingest/parsers/scaffold.py` | Stub generator |
-| `src/finance_ingest/exporters/protocol.py` | `Exporter` Protocol |
-| `src/finance_ingest/exporters/pdf_summary.py` | v1 PDF |
-| `src/finance_ingest/service.py` | Façade used by CLI/MCP |
-| `src/finance_ingest/cli.py` | CLI |
-| `src/finance_ingest/mcp/server.py` | MCP tools |
+| `src/canhoto/core/models.py` | Domain models |
+| `src/canhoto/core/config.py` | Data dir + config.json |
+| `src/canhoto/core/store.py` | SQLite |
+| `src/canhoto/core/policy.py` | AgentView + batch clamps |
+| `src/canhoto/core/redaction.py` | ReviewItem projection |
+| `src/canhoto/core/pipeline.py` | Orchestration helpers |
+| `src/canhoto/parsers/protocol.py` | `StatementParser` Protocol |
+| `src/canhoto/parsers/loader.py` | Load/enable from data dir |
+| `src/canhoto/parsers/scaffold.py` | Stub generator |
+| `src/canhoto/exporters/protocol.py` | `Exporter` Protocol |
+| `src/canhoto/exporters/pdf_summary.py` | v1 PDF |
+| `src/canhoto/service.py` | Façade used by CLI/MCP |
+| `src/canhoto/cli.py` | CLI |
+| `src/canhoto/mcp/server.py` | MCP tools |
 | `tests/guardrails/` | Privacy/allowlist tests |
 | `examples/parsers/README.md` | How to write a parser (not imported at runtime) |
 
@@ -84,7 +89,7 @@ Ship types and tests that define “safe” **before** MCP or parser execution e
 ### Task 0.1 — Domain models for plugins, policy, review, report
 
 **Files:**
-- Create or reshape: `src/finance_ingest/core/models.py` (or `models.py` if not moving yet)
+- Create or reshape: `src/canhoto/core/models.py` (or `models.py` if not moving yet)
 - Test: `tests/guardrails/test_models_contracts.py`
 
 **Models to define:**
@@ -124,7 +129,7 @@ class ReviewItem(BaseModel):
     id: str
     date: str
     amount: str | None
-    currency: str = "BRL"
+    currency: str = "BRL"  # default only; core must allow override
     merchant_display: str
     source_kind: str
     institution: str | None = None
@@ -162,15 +167,15 @@ def test_review_item_has_no_forbidden_fields():
 - [ ] **Step 3: Tests pass; commit**
 
 ```bash
-git add src/finance_ingest tests/guardrails
+git add src/canhoto tests/guardrails
 git commit -m "feat: add core contracts for agent view and reports"
 ```
 
 ### Task 0.2 — Policy helpers + redaction pure functions
 
 **Files:**
-- `src/finance_ingest/core/policy.py`
-- `src/finance_ingest/core/redaction.py`
+- `src/canhoto/core/policy.py`
+- `src/canhoto/core/redaction.py`
 - `tests/guardrails/test_policy.py`
 - `tests/guardrails/test_redaction.py`
 
@@ -191,7 +196,7 @@ def to_review_item(tx: Transaction, view: AgentViewConfig) -> ReviewItem: ...
 ### Task 0.3 — MCP allowlist constant (fail closed)
 
 **Files:**
-- `src/finance_ingest/mcp/allowlist.py`
+- `src/canhoto/mcp/allowlist.py`
 - `tests/guardrails/test_mcp_allowlist.py`
 
 ```python
@@ -238,7 +243,7 @@ MCP_TOOL_DENYLIST = frozenset({
 - `load_config` / `save_config` round-trip `AgentViewConfig` + `parsers`.
 - Strip required Google fields from core config.
 
-- [ ] Tests with `tmp_path` + `FINANCE_DATA_DIR`
+- [ ] Tests with `tmp_path` + `CANHOTO_DATA_DIR`
 - [ ] Commit `feat: init data dir and plugin-aware config`
 
 ### Task 1.2 — SQLite store (ledger only)
@@ -264,13 +269,13 @@ Reuse good ideas from archive branch store, but **do not** require `pushed_to_sh
 **Files:** `cli.py`, `service.py`, `tests/test_doctor.py`
 
 ```bash
-finance init
-finance doctor
+coto init
+coto doctor
 ```
 
 Doctor JSON checks: data dir writable, config present, parser count enabled/disabled, db openable, pending_review total.
 
-- [ ] Commit `feat: add finance init and doctor`
+- [ ] Commit `feat: add coto init and doctor`
 
 **Phase 1 exit:** installable module initializes a clean data dir and doctor runs without parsers.
 
@@ -309,10 +314,10 @@ def choose_parser(text: str, parsers: sequence[StatementParser]) -> StatementPar
 **CLI:**
 
 ```bash
-finance parsers scaffold --id demo_card --type card --institution demo
-finance parsers test --id demo_card --file /path/to/sample.pdf
-finance parsers enable --id demo_card
-finance parsers list
+coto parsers scaffold --id demo_card --type card --institution demo
+coto parsers test --id demo_card --file /path/to/sample.pdf
+coto parsers enable --id demo_card
+coto parsers list
 ```
 
 **Service APIs** used later by MCP:
@@ -332,7 +337,7 @@ Rules:
 **Files:** `examples/parsers/README.md` + one `examples/parsers/demo_line_parser.py` that parses a trivial fixture format used in tests.
 
 - Not auto-loaded from package.
-- `finance parsers scaffold` may copy from example template text embedded in package resources.
+- `coto parsers scaffold` may copy from example template text embedded in package resources.
 
 - [ ] Commit `docs: add example statement parser template`
 
@@ -365,8 +370,8 @@ ingest(paths) ->
 ### Task 3.2 — CLI ingest
 
 ```bash
-finance ingest ~/extratos/*.pdf
-finance parse ~/extratos/a.pdf    # dry-run JSON summary (capped rows)
+coto ingest ~/statements/*.pdf
+coto parse ~/statements/a.pdf    # dry-run JSON summary (capped rows)
 ```
 
 - [ ] Commit `feat: CLI ingest and parse dry-run`
@@ -382,7 +387,7 @@ finance parse ~/extratos/a.pdf    # dry-run JSON summary (capped rows)
 Port/adapt `categorize.py` rules (self-transfer markers, card payment, etc.) without Sheets assumptions.
 
 ```bash
-finance categorize rules --month 2026-06
+coto categorize rules --month 2026-06
 ```
 
 - [ ] Commit `feat: deterministic categorization rules`
@@ -399,8 +404,8 @@ Must use Phase 0 redaction + policy.
 CLI:
 
 ```bash
-finance review --month 2026-06 --json
-finance categorize apply --file patches.json
+coto review --month 2026-06 --json
+coto categorize apply --file patches.json
 ```
 
 - [ ] Guardrail test: review JSON keys ⊆ ReviewItem fields
@@ -428,11 +433,11 @@ No transaction list field.
 
 ---
 
-# Phase 5 — MCP (Hermes loop)
+# Phase 5 — MCP (agent loop)
 
 ### Task 5.1 — Server wiring
 
-**Files:** `src/finance_ingest/mcp/server.py`, entrypoint `finance-mcp`
+**Files:** `src/canhoto/mcp/server.py`, entrypoint `coto-mcp`
 
 Register **only** `MCP_TOOL_ALLOWLIST` tools. Each tool calls `service.*`.
 
@@ -447,7 +452,7 @@ Register **only** `MCP_TOOL_ALLOWLIST` tools. Each tool calls `service.*`.
 
 - [ ] Test: loading server, tool names == allowlist
 - [ ] Test: denylist names absent
-- [ ] Commit `feat: Hermes MCP domain tools`
+- [ ] Commit `feat: Canhoto MCP domain tools`
 
 ### Task 5.2 — Instructions string
 
@@ -477,8 +482,8 @@ class ReportBundle:
 ```
 
 ```bash
-finance export pdf 2026-06
-# → $FINANCE_DATA_DIR/exports/2026-06-summary.pdf
+coto export pdf 2026-06
+# → $CANHOTO_DATA_DIR/exports/2026-06-summary.pdf
 ```
 
 MCP: `export_pdf(month) -> {path, bytes or size}`
@@ -505,7 +510,7 @@ MCP: `export_pdf(month) -> {path, bytes or size}`
 
 ### Task 7.3 — Migration note from archive branch
 
-Short `docs/MIGRATION.md`: how to copy old Itaú/MP parsers from archive branch into `~/.finance-ingest/parsers/` if desired.
+Short `docs/MIGRATION.md`: how to copy old Itaú/MP parsers from archive branch into `~/.canhoto/parsers/` if desired.
 
 - [ ] Commit `docs: distribution and migration notes`
 
@@ -513,18 +518,18 @@ Short `docs/MIGRATION.md`: how to copy old Itaú/MP parsers from archive branch 
 
 ---
 
-## Suggested Hermes demo script (acceptance)
+## Suggested agent demo script (acceptance)
 
 ```text
-1. finance init
-2. config agent_view.allow_parser_writes=true (for full Hermes)
-3. Hermes: preview sample fixture
-4. Hermes: write demo parser / real user parser
-5. Hermes: test + enable
-6. Hermes: ingest fixture
-7. Hermes: run_rules + review/set_categories
-8. Hermes: month_breakdown
-9. Hermes: export_pdf
+1. coto init
+2. config agent_view.allow_parser_writes=true (for full agent profile)
+3. Agent: preview sample fixture
+4. Agent: write demo parser / real user parser
+5. Agent: test + enable
+6. Agent: ingest fixture
+7. Agent: run_rules + review/set_categories
+8. Agent: month_breakdown
+9. Agent: export_pdf
 10. User opens PDF from exports/
 ```
 
@@ -568,7 +573,7 @@ Must remain true:
 | No built-in bank parsers required | 2, 3 |
 | Option A Python parsers + enable/test | 2 |
 | SQLite ledger | 1, 3 |
-| Hermes MCP full loop | 5 |
+| Agent MCP full loop | 5 |
 | Domain tools not raw SQL | 0, 5 |
 | Summary PDF only | 6 |
 | Guardrails before features | 0 |
