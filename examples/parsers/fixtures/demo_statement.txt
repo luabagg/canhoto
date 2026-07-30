@@ -1,0 +1,5 @@
+# Trivial demo statement (not a real bank export)
+DEMO_STATEMENT account Demo Bank
+2026-07-01 -12.50 COFFEE SHOP
+2026-07-02 1000.00 PAYROLL
+2026-07-03 -3.99 STREAMING
