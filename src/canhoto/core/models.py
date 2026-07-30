@@ -155,6 +155,35 @@ class LedgerTransaction(BaseModel):
         return Decimal(self.amount_minor) / Decimal(_MINOR_SCALE)
 
 
+class StatementMeta(BaseModel):
+    """Normalized statement-level metadata produced by a parser.
+
+    Free-form enough for any institution; no bank-specific required fields.
+    Extra keys may live in ``raw_summary``.
+    """
+
+    statement_type: StatementType | str
+    source_file: str
+    institution: str | None = None
+    period_start: date | None = None
+    period_end: date | None = None
+    due_date: date | None = None
+    currency: str | None = None
+    raw_summary: dict[str, Any] = Field(default_factory=dict)
+
+
+class ParseResult(BaseModel):
+    """Output of ``StatementParser.parse`` — meta + ledger-ready rows.
+
+    ``transactions`` use ``LedgerTransaction`` so the ingest path can upsert
+    without a second mapping layer. Parsers should leave classification fields
+    at defaults (empty category/kind, needs_review=True) unless they truly know.
+    """
+
+    meta: StatementMeta
+    transactions: list[LedgerTransaction] = Field(default_factory=list)
+
+
 class StatementRecord(BaseModel):
     """Statement identity and metadata keyed by content hash."""
 
