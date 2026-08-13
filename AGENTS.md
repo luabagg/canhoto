@@ -19,7 +19,8 @@ User docs: [`README.md`](README.md).
 
 ```text
 src/canhoto/
-  core/           # models, config, store, policy, redaction, categorize, breakdown, pdf_text
+  core/           # models, config, store, migrate, policy, redaction, categorize, …
+  migrations/     # Alembic scripts (SQLite)
   parsers/        # Protocol, loader, scaffold (no bank logic)
   exporters/      # pdf_summary
   mcp/            # allowlist + Fast/MCP server → service only
@@ -41,14 +42,14 @@ Dependency direction: `cli` / `mcp` → `service` → `core` + ports.
 | Parser enable only after successful `parser_test` (non-empty txs) | Auto-download parsers; stamp OK on empty parse |
 | PDF summary only | Full transaction listing PDF |
 | Country-agnostic core | Hardcode one bank as the kernel |
-| Prefer deleting dead code | Dual-maintain a second product tree |
+| Prefer deleting dead code | Keep unused alternate trees |
 
 ## MCP happy path
 
-1. `statement_preview` → `parser_write` / `parser_test` → `parser_enable`  
-2. `ingest`  
-3. `run_rules` → `review_batch` loop → `set_categories`  
-4. `month_breakdown` → `export_pdf`  
+1. `statement_preview` → `parser_scaffold` / `parser_write` → `parser_test` → `parser_enable`
+2. `ingest`
+3. `run_rules` → `review_batch` loop → `set_categories`
+4. `month_breakdown` → `export_pdf`
 
 `parser_write` requires `agent_view.allow_parser_writes=true`. CLI may always write local parsers.
 
@@ -77,7 +78,7 @@ uv run canhoto-mcp   # stdio; host-spawned
 
 ## Quality bar
 
-- TDD for behavior changes; meaningful tests only  
-- No Google/Sheets in core  
-- No public `finance_*` names  
-- Guardrails in `tests/guardrails/` must stay green  
+- TDD for behavior changes; meaningful tests only
+- No Google/Sheets in core
+- Guardrails in `tests/guardrails/` must stay green
+
