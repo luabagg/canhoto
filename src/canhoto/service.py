@@ -17,6 +17,7 @@ from typing import Any, Literal
 from canhoto.core import breakdown as core_breakdown
 from canhoto.core import categorize as core_categorize
 from canhoto.core import config as core_config
+from canhoto.core import migrate as core_migrate
 from canhoto.core import store as core_store
 from canhoto.core.models import (
     ClassificationPatch,
@@ -93,6 +94,7 @@ def doctor(root: Path | None = None) -> dict[str, Any]:
     db_file = core_config.db_path(data_dir)
     db_openable = False
     pending_review = 0
+    db_revision: str | None = None
     if not writable:
         ok = False
         checks.append("skip: db (data_dir not writable)")
@@ -104,10 +106,12 @@ def doctor(root: Path | None = None) -> dict[str, Any]:
             with core_store.connect(db_file) as conn:
                 conn.execute("SELECT 1").fetchone()
             db_openable = True
+            db_revision = core_migrate.current_revision(db_file)
             pending_review = core_store.count_pending_review(path=db_file)
             checks.append("ok: db_openable")
+            checks.append(f"ok: db_revision={db_revision}")
             checks.append(f"ok: pending_review={pending_review}")
-        except (OSError, sqlite3.Error) as exc:
+        except (OSError, sqlite3.Error, RuntimeError) as exc:
             ok = False
             checks.append(f"error: db_not_openable ({type(exc).__name__})")
 
@@ -121,6 +125,7 @@ def doctor(root: Path | None = None) -> dict[str, Any]:
         "parsers_enabled": parsers_enabled,
         "parsers_disabled": parsers_disabled,
         "db_openable": db_openable,
+        "db_revision": db_revision,
         "pending_review": pending_review,
         "checks": checks,
     }
@@ -659,7 +664,7 @@ def review_batch(
 ) -> dict[str, Any]:
     """Return a capped, redacted pending-review batch for ``month`` (YYYY-MM).
 
-    Uses Phase 0 policy (``assert_month``, ``clamp_batch_size``) and redaction
+    Uses policy (``assert_month``, ``clamp_batch_size``) and redaction
     (``to_review_item`` only). Default queue is pending review; when
     ``agent_view.expense_only`` is true (default), only expense rows are included.
 
@@ -782,7 +787,7 @@ def month_breakdown(
     }
 
 
-# --- Agent preview + PDF export (PDF body lands in Phase 6) ---
+# --- Agent preview + PDF export ---
 
 
 def statement_preview(

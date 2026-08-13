@@ -14,6 +14,7 @@ from datetime import date
 from pathlib import Path
 
 from canhoto.core.config import db_path
+from canhoto.core.migrate import upgrade_to_head
 from canhoto.core.models import (
     ClassificationPatch,
     ClassificationResult,
@@ -23,74 +24,18 @@ from canhoto.core.models import (
     UpsertResult,
 )
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS transactions (
-  id TEXT PRIMARY KEY,
-  date TEXT NOT NULL,
-  amount_minor INTEGER NOT NULL,
-  currency TEXT NOT NULL,
-  description TEXT NOT NULL DEFAULT '',
-  merchant_raw TEXT NOT NULL DEFAULT '',
-  merchant_normalized TEXT,
-  source_kind TEXT NOT NULL,
-  institution TEXT,
-  source_file TEXT,
-  operation_id TEXT,
-  running_balance_minor INTEGER,
-  account_id TEXT,
-  category TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  is_expense INTEGER NOT NULL DEFAULT 0,
-  needs_review INTEGER NOT NULL DEFAULT 1,
-  confidence REAL NOT NULL DEFAULT 0,
-  review_reason TEXT,
-  installment TEXT,
-  month TEXT NOT NULL,
-  billing_cycle TEXT,
-  metadata TEXT NOT NULL DEFAULT '{}',
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS statements (
-  content_hash TEXT PRIMARY KEY,
-  source_file TEXT NOT NULL,
-  statement_type TEXT NOT NULL,
-  institution TEXT,
-  meta_json TEXT NOT NULL DEFAULT '{}',
-  ingested_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS statement_transactions (
-  content_hash TEXT NOT NULL,
-  transaction_id TEXT NOT NULL,
-  PRIMARY KEY (content_hash, transaction_id),
-  FOREIGN KEY (content_hash) REFERENCES statements(content_hash),
-  FOREIGN KEY (transaction_id) REFERENCES transactions(id)
-);
-
-CREATE TABLE IF NOT EXISTS merchant_category_map (
-  merchant_key TEXT PRIMARY KEY,
-  category TEXT NOT NULL,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_transactions_month ON transactions(month);
-CREATE INDEX IF NOT EXISTS idx_transactions_needs_review ON transactions(needs_review);
-CREATE INDEX IF NOT EXISTS idx_transactions_month_review ON transactions(month, needs_review);
-"""
 
 @contextmanager
 def connect(path: Path | None = None) -> Iterator[sqlite3.Connection]:
-    """Open canhoto.db, ensure schema, yield a Row-factory connection."""
+    """Open canhoto.db, upgrade to Alembic head, yield connection."""
     p = path if path is not None else db_path()
     p.parent.mkdir(parents=True, exist_ok=True)
+    upgrade_to_head(p)
     conn = sqlite3.connect(p)
     conn.row_factory = sqlite3.Row
     try:
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA busy_timeout = 5000")
-        conn.executescript(SCHEMA)
         try:
             yield conn
             conn.commit()
@@ -102,9 +47,8 @@ def connect(path: Path | None = None) -> Iterator[sqlite3.Connection]:
 
 
 def ensure_schema(path: Path | None = None) -> None:
-    """Create tables/indexes if missing."""
-    with connect(path):
-        pass
+    """Ensure the DB is at Alembic head."""
+    upgrade_to_head(path)
 
 
 def _tx_to_params(tx: LedgerTransaction) -> dict[str, object]:
@@ -551,7 +495,6 @@ def set_merchant_category(
 
 
 __all__ = [
-    "SCHEMA",
     "apply_classifications",
     "connect",
     "count_pending_review",

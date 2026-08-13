@@ -23,6 +23,7 @@ dependencies = [
   "pydantic>=2.0",
   "mcp>=1.0",
   "fpdf2>=2.8.7",
+  "alembic>=1.19.1",
 ]
 
 [project.optional-dependencies]
@@ -68,7 +69,7 @@ filterwarnings = [
 target-version = "py311"
 line-length = 100
 src = ["src/canhoto", "tests"]
-extend-exclude = ["examples", ".venv", "dist"]
+extend-exclude = ["examples", ".venv", "dist", "src/canhoto/migrations/script.py.mako"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
