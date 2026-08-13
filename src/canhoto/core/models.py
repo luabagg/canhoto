@@ -1,8 +1,8 @@
 """Privacy-safe domain contracts for plugins, agent policy, review, and reports.
 
-These models are the stable surface later CLI/MCP layers must use. Review and
-report shapes intentionally omit raw ledger fields (full description, source
-paths, operation ids, balances, account ids, metadata bags).
+Stable surface for CLI/MCP. Review and report shapes omit raw ledger fields
+(full description, source paths, operation ids, balances, account ids,
+metadata bags).
 """
 
 from __future__ import annotations
@@ -234,7 +234,7 @@ class UpsertResult(BaseModel):
 class ClassificationResult(BaseModel):
     applied: int
     missing: list[str] = Field(default_factory=list)
-    # Rows classified via merchant_category_map after the rule pack (Task 4.3).
+    # Rows classified via merchant_category_map after the rule pack.
     merchant_memory_applied: int = 0
 
 

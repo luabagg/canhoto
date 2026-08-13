@@ -11,8 +11,8 @@ returns an object satisfying ``StatementParser``::
     def register() -> StatementParser:
         return MyParser()
 
-A module-level ``PARSER`` attribute is **not** supported. Scaffold (Task 2.2)
-must emit ``register()`` only so discovery stays unambiguous.
+A module-level ``PARSER`` attribute is **not** supported — discovery expects
+``register()`` only.
 """
 
 from __future__ import annotations

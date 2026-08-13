@@ -1,7 +1,7 @@
 """MCP tool allowlist contract — fail closed.
 
-Only tools in ``MCP_TOOL_ALLOWLIST`` may be registered when the server is
-wired (Phase 5). ``MCP_TOOL_DENYLIST`` names must never be exposed.
+Only tools in ``MCP_TOOL_ALLOWLIST`` may be registered.
+``MCP_TOOL_DENYLIST`` names must never be exposed.
 """
 
 from __future__ import annotations

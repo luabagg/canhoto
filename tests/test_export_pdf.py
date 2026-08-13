@@ -1,4 +1,4 @@
-"""Focused summary PDF export tests (Task 6.1)."""
+"""Summary PDF export tests."""
 
 from __future__ import annotations
 

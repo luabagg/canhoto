@@ -1,4 +1,4 @@
-"""Focused tests for parser scaffold / test / enable flow (Task 2.2)."""
+"""Parser scaffold / test / enable flow tests."""
 
 from __future__ import annotations
 

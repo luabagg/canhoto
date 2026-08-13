@@ -1,7 +1,7 @@
 """Data-dir layout and plugin-aware config.json I/O.
 
-Resolves ``CANHOTO_DATA_DIR`` or ``~/.canhoto``. No Google/Sheets fields, no
-legacy finance paths, and no SQLite open here (store lands in the next task).
+Resolves ``CANHOTO_DATA_DIR`` or ``~/.canhoto``. Layout and config only —
+SQLite open/migrate lives in ``store`` / ``migrate``.
 """
 
 from __future__ import annotations

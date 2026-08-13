@@ -1,4 +1,4 @@
-"""Init + doctor service/CLI tests (Phase 1 Task 1.3)."""
+"""Init + doctor service/CLI tests."""
 
 from __future__ import annotations
 

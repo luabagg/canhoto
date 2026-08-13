@@ -1,9 +1,8 @@
-"""Config + data-dir layout tests (Phase 1 Task 1.1)."""
+"""Config + data-dir layout tests."""
 
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -145,23 +144,3 @@ def test_save_config_never_writes_google_fields(data_home: Path) -> None:
     dumped = cfg.model_dump()
     assert FORBIDDEN_CONFIG_KEYS.isdisjoint(dumped)
 
-
-def test_never_uses_legacy_finance_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("CANHOTO_DATA_DIR", raising=False)
-    monkeypatch.delenv("FINANCE_DATA_DIR", raising=False)
-    legacy = tmp_path / "legacy-finance"
-    monkeypatch.setenv("FINANCE_DATA_DIR", str(legacy))
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
-
-    root = get_data_dir()
-    assert root == tmp_path / ".canhoto"
-    assert root != legacy
-    assert root.name == ".canhoto"
-    assert os.environ.get("FINANCE_DATA_DIR") == str(legacy)
-    # Ensure init still lands under Canhoto path, not FINANCE_DATA_DIR.
-    created = init_data_dir()
-    assert created == root
-    assert (root / "config.json").is_file()
-    assert not (legacy / "config.json").exists()

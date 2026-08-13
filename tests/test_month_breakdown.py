@@ -1,4 +1,4 @@
-"""Focused month breakdown aggregate tests (Task 4.4)."""
+"""Month breakdown aggregate tests."""
 
 from __future__ import annotations
 

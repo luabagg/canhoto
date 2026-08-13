@@ -1,4 +1,4 @@
-"""Focused deterministic categorization rules tests (Task 4.1)."""
+"""Deterministic categorization rules tests."""
 
 from __future__ import annotations
 

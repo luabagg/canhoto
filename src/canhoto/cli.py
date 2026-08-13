@@ -1,15 +1,15 @@
 """Canhoto CLI adapter — thin argparse layer over ``canhoto.service``.
 
-Package console scripts land in Phase 7. Until then, invoke via::
+Console entrypoint ``canhoto``. Examples::
 
-    python -m canhoto.cli init
-    python -m canhoto.cli doctor
-    python -m canhoto.cli parsers list
-    python -m canhoto.cli ingest path/to/statement.txt
-    python -m canhoto.cli review --month YYYY-MM --json
-    python -m canhoto.cli categorize apply --file patches.json
-    python -m canhoto.cli breakdown --month YYYY-MM
-    python -m canhoto.cli export pdf YYYY-MM
+    canhoto init
+    canhoto doctor
+    canhoto parsers list
+    canhoto ingest path/to/statement.txt
+    canhoto review --month YYYY-MM --json
+    canhoto categorize apply --file patches.json
+    canhoto breakdown --month YYYY-MM
+    canhoto export pdf YYYY-MM
 """
 
 from __future__ import annotations

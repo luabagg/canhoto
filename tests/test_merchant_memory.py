@@ -1,4 +1,4 @@
-"""Focused merchant category memory tests (Task 4.3)."""
+"""Merchant category memory tests."""
 
 from __future__ import annotations
 

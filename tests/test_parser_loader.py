@@ -1,4 +1,4 @@
-"""Focused tests for StatementParser protocol, registry, and loader (Task 2.1)."""
+"""StatementParser protocol, registry, and loader tests."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Focused ingest tests (Task 3.1) — demo plugin parser + TXT fixture."""
+"""Ingest tests — demo plugin parser + TXT fixture."""
 
 from __future__ import annotations
 

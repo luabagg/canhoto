@@ -1,4 +1,4 @@
-"""Guardrail tests for redacted review_batch agent output (Task 4.2)."""
+"""Guardrail tests for redacted review_batch agent output."""
 
 from __future__ import annotations
 

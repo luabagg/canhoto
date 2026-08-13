@@ -1,4 +1,4 @@
-"""Focused SQLite ledger store tests (Task 1.2)."""
+"""SQLite ledger store tests."""
 
 from __future__ import annotations
 

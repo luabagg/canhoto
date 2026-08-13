@@ -1,4 +1,4 @@
-"""MCP server wiring tests (Task 5.1) — registry + gated tools."""
+"""MCP server wiring tests — registry + gated tools."""
 
 from __future__ import annotations
 

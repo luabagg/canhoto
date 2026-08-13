@@ -1,4 +1,4 @@
-"""Focused review batch + category patch tests (Task 4.2)."""
+"""Review batch + category patch tests."""
 
 from __future__ import annotations
 
