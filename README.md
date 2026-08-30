@@ -4,6 +4,11 @@ Canhoto keeps your bank and card statement data on your computer. It helps you
 parse statements, categorize spending, review uncertain items, and export a
 monthly PDF.
 
+> **Using an AI agent?** Connect `canhoto-mcp`. It gives the agent a safe,
+> bounded workflow for parsing statements, reviewing and categorizing expenses,
+> viewing monthly totals, and exporting reports. It never gives the agent SQL
+> access or a full ledger dump. Use the CLI for the same workflow by hand.
+
 | | |
 |---|---|
 | Package | `canhoto` |
@@ -113,7 +118,8 @@ canhoto export pdf 2026-06 --profile minimal
 
 ## MCP
 
-The CLI and MCP server use the same service layer. MCP agents use this flow:
+The CLI and MCP server use the same service layer. For agent-assisted use,
+start the MCP server and follow this flow:
 
 `statement_preview` -> `parser_*` -> `ingest` -> `run_rules` ->
 `review_batch` -> `set_categories` -> `month_breakdown` -> `export_pdf`
