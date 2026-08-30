@@ -244,6 +244,7 @@ def parser_test(
     file: str | Path,
     *,
     root: Path | None = None,
+    pdf_password: str | None = None,
 ) -> dict[str, Any]:
     """Load parser by id, run parse against sample file, stamp last_test_* on config."""
     data_dir = _ensure_data_dir(root)
@@ -253,7 +254,7 @@ def parser_test(
     if not sample.is_file():
         raise FileNotFoundError(f"sample file not found: {sample}")
 
-    text = _read_sample_text(sample)
+    text = _read_sample_text(sample, pdf_password=pdf_password)
     source_file = str(sample)
     now = _utc_now_iso()
     ok = False
@@ -378,6 +379,7 @@ def ingest(
     paths: Sequence[str | Path],
     *,
     root: Path | None = None,
+    pdf_password: str | None = None,
 ) -> dict[str, Any]:
     """Archive, parse, and upsert statement files via enabled plugin parsers.
 
@@ -425,7 +427,7 @@ def ingest(
         content_hash = hashlib.sha256(content).hexdigest()
         archived_path = _archive_raw(raw_dir, content_hash, src, content)
 
-        text = extract_text(src)
+        text = extract_text(src, pdf_password=pdf_password)
         parser = parser_loader.choose_parser(text, parsers)
         source_file = str(src.resolve())
         parsed = parser.parse(text, source_file)
@@ -554,9 +556,9 @@ def _parser_module_path(data_dir: Path, parsers_dir: str, module: str) -> Path:
     return path
 
 
-def _read_sample_text(sample: Path) -> str:
+def _read_sample_text(sample: Path, *, pdf_password: str | None = None) -> str:
     """Read sample file as text via shared extract helper."""
-    return extract_text(sample)
+    return extract_text(sample, pdf_password=pdf_password)
 
 
 def _utc_now_iso() -> str:
@@ -794,6 +796,7 @@ def statement_preview(
     path: str | Path,
     *,
     root: Path | None = None,
+    pdf_password: str | None = None,
 ) -> dict[str, Any]:
     """Extract statement text and return a truncated agent-safe preview.
 
@@ -811,7 +814,7 @@ def statement_preview(
     if not src.is_file():
         raise FileNotFoundError(f"file not found: {src}")
 
-    text = extract_text(src)
+    text = extract_text(src, pdf_password=pdf_password)
     char_count = len(text)
     truncated = char_count > max_chars
     preview = text[:max_chars] if truncated else text
@@ -826,12 +829,15 @@ def statement_preview(
 def export_pdf(
     month: str,
     *,
+    output: str | Path | None = None,
+    profile: str = "canhoto",
     root: Path | None = None,
 ) -> dict[str, Any]:
-    """Build month aggregates and write a summary PDF under ``exports/``.
+    """Build month aggregates and write a summary PDF.
 
-    Path is always ``{data_dir}/exports/{month}-summary.pdf``. Never includes
-    a full transaction listing — metrics + category totals only.
+    Default path: ``{data_dir}/exports/{month}-summary.pdf``. Pass ``output``
+    to write elsewhere. Never includes a full transaction listing — metrics,
+    category totals, and normalized merchant aggregates only.
     """
     month_value = assert_month(month)
     data_dir = _ensure_data_dir(root)
@@ -849,20 +855,25 @@ def export_pdf(
         path=db_file,
     )
     breakdown = core_breakdown.compute_month_breakdown(month_value, txs)
+    merchant_spend_by_category = core_breakdown.compute_merchant_spend_by_category(txs)
     generated_at = _utc_now_iso()
     bundle = ReportBundle(
         breakdown=breakdown,
+        merchant_spend_by_category=merchant_spend_by_category,
         generated_at=generated_at,
         title=f"Canhoto summary — {month_value}",
     )
 
-    exports_dir = (data_dir / "exports").resolve()
-    exports_dir.mkdir(parents=True, exist_ok=True)
-    dest = (exports_dir / f"{month_value}-summary.pdf").resolve()
-    if exports_dir not in dest.parents and dest.parent != exports_dir:
-        raise RuntimeError("export path escaped exports directory")
+    if output is not None:
+        dest = Path(output).expanduser().resolve()
+    else:
+        exports_dir = (data_dir / "exports").resolve()
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        dest = (exports_dir / f"{month_value}-summary.pdf").resolve()
+        if exports_dir not in dest.parents and dest.parent != exports_dir:
+            raise RuntimeError("export path escaped exports directory")
 
-    written = PdfSummaryExporter().export(bundle, dest)
+    written = PdfSummaryExporter(profile=profile).export(bundle, dest)
     size = written.stat().st_size
     if size <= 0:
         raise RuntimeError("export produced empty PDF")
@@ -872,5 +883,6 @@ def export_pdf(
         "month": month_value,
         "path": str(written),
         "size": size,
+        "profile": profile,
         "data_dir": str(data_dir.resolve()),
     }

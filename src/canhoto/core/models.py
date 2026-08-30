@@ -122,9 +122,10 @@ class MonthBreakdown(BaseModel):
 
 
 class ReportBundle(BaseModel):
-    """In-memory report payload for exporters (summary PDF v1)."""
+    """In-memory aggregate payload for local summary exporters only."""
 
     breakdown: MonthBreakdown
+    merchant_spend_by_category: dict[str, dict[str, str]] = Field(default_factory=dict)
     generated_at: str
     title: str
 

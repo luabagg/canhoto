@@ -1,10 +1,8 @@
 # Canhoto
 
-Canhoto keeps a local copy of your bank and card statement data.
-
-You install a CLI. You can also run an MCP server for agents.
-
-You write Python parsers for your statements. Canhoto stores the data in SQLite. You categorize the transactions. You export a monthly summary PDF.
+Canhoto keeps your bank and card statement data on your computer. It helps you
+parse statements, categorize spending, review uncertain items, and export a
+monthly PDF.
 
 | | |
 |---|---|
@@ -15,138 +13,125 @@ You write Python parsers for your statements. Canhoto stores the data in SQLite.
 
 ## Install
 
-Install from a release:
+Install a release:
 
 ```bash
 uv tool install canhoto
 ```
 
-Or install from this repository:
+Or run this repository locally:
 
 ```bash
 uv sync
 uv run canhoto --help
 ```
 
-Create the data directory and config:
+Create the local data directory:
 
 ```bash
 canhoto init
 canhoto doctor
 ```
 
-### MCP host
+## How it works
 
-Add the MCP server to your host config (for example Hermes):
+```mermaid
+flowchart TD
+  A[Statement PDF or text] --> B[Parser]
+  B --> C[Ingest]
+  C --> D[(Local SQLite ledger)]
+  D --> E[Run category rules]
+  E --> F[Review uncertain items]
+  F --> G[Apply categories or save merchant memory]
+  G --> H[Monthly breakdown]
+  H --> I[Summary PDF]
+```
+
+Parsers only extract statement rows. Canhoto core handles categories, merchant
+memory, reports, and exports.
+
+## Create a parser
+
+Canhoto does not ship bank-specific parsers. Create one for your statement:
+
+```bash
+canhoto parsers scaffold --id my_bank_card --type card --institution my_bank
+```
+
+Edit `~/.canhoto/parsers/my_bank_card.py`, then test and enable it:
+
+```bash
+canhoto parsers test --id my_bank_card --file ~/statements/sample.pdf
+canhoto parsers enable --id my_bank_card
+```
+
+A parser must successfully extract transactions before it can be enabled. See
+[`examples/parsers/`](examples/parsers/) for a small example.
+
+## Process a month
+
+```bash
+# Ingest statements.
+canhoto ingest ~/statements/*.pdf
+
+# Apply category rules and remembered merchant categories.
+canhoto categorize rules --month 2026-06
+
+# Review anything still uncertain.
+canhoto review --month 2026-06 --json
+
+# See income, expenses, and category totals.
+canhoto breakdown --month 2026-06
+
+# Create a local PDF report.
+canhoto export pdf 2026-06
+```
+
+To remember a category for later matching merchants:
+
+```bash
+canhoto categorize merchant --key CURSOR --category Subscriptions
+```
+
+The PDF is written to `~/.canhoto/exports/2026-06-summary.pdf` by default.
+It shows totals by category and top normalized merchants within each category.
+It never contains a full transaction table or raw statement descriptions.
+
+### PDF profiles
+
+Choose a built-in style:
+
+```bash
+canhoto export pdf 2026-06 --profile canhoto
+canhoto export pdf 2026-06 --profile modern --output ~/Documents/2026-06.pdf
+canhoto export pdf 2026-06 --profile minimal
+```
+
+- `canhoto` - receipt-style report with a category chart.
+- `modern` - clean report with metric cards and a category chart.
+- `minimal` - text-only report without a chart.
+
+## MCP
+
+The CLI and MCP server use the same service layer. MCP agents use this flow:
+
+`statement_preview` -> `parser_*` -> `ingest` -> `run_rules` ->
+`review_batch` -> `set_categories` -> `month_breakdown` -> `export_pdf`
+
+MCP only exposes domain tools. It does not provide SQL access or full ledger
+dumps. To let an agent write parsers, add this to `~/.canhoto/config.json`:
+
+```json
+{ "agent_view": { "allow_parser_writes": true } }
+```
+
+Example MCP host configuration:
 
 ```yaml
 mcp_servers:
   canhoto:
     command: canhoto-mcp
 ```
-
-To let an agent write parsers, set this in `~/.canhoto/config.json`:
-
-```json
-{ "agent_view": { "allow_parser_writes": true } }
-```
-
-## Workflow
-
-```mermaid
-flowchart TD
-  subgraph setup [One-time setup]
-    A[Statement PDF or text] --> B[Write parser]
-    B --> C[parsers test]
-    C -->|has transactions| D[parsers enable]
-  end
-
-  subgraph monthly [Each month]
-    D --> E[ingest]
-    E --> F[(SQLite ledger<br/>canhoto.db)]
-    F --> G[Apply rules<br/>and merchant memory]
-    G --> H[Review batches<br/>redacted]
-    H -->|set categories| F
-    F --> I[Month breakdown]
-    I --> J[Export summary PDF]
-  end
-
-  J --> K["~/.canhoto/exports/YYYY-MM-summary.pdf"]
-```
-
-The CLI and the MCP server use the same service layer.
-
-Agent tools follow this order: `statement_preview`, `parser_*`, `ingest`, `run_rules`, `review_batch`, `set_categories`, `month_breakdown`, `export_pdf`.
-
-### Create a parser
-
-Scaffold a parser module:
-
-```bash
-canhoto parsers scaffold --id my_bank_card --type card --institution my_bank
-```
-
-Edit `~/.canhoto/parsers/my_bank_card.py`. Implement `register()`.
-
-Test the parser on a sample file:
-
-```bash
-canhoto parsers test --id my_bank_card --file ~/statements/sample.pdf
-```
-
-Enable the parser only after a successful test:
-
-```bash
-canhoto parsers enable --id my_bank_card
-```
-
-A demo parser is in [`examples/parsers/`](examples/parsers/). The package does not load it.
-
-### Process a month
-
-Ingest statement files:
-
-```bash
-canhoto ingest ~/statements/*.pdf
-```
-
-Apply category rules:
-
-```bash
-canhoto categorize rules --month 2026-06
-```
-
-Review pending items (JSON output):
-
-```bash
-canhoto review --month 2026-06 --json
-```
-
-Show the month breakdown:
-
-```bash
-canhoto breakdown --month 2026-06
-```
-
-Export the summary PDF:
-
-```bash
-canhoto export pdf 2026-06
-```
-
-The file is written to `~/.canhoto/exports/2026-06-summary.pdf`.
-
-## Design
-
-**Parsers.** You keep parser plugins in the data directory. The package does not ship bank parsers.
-
-**Ledger.** SQLite file `canhoto.db` is the system of record.
-
-**MCP.** Agents get domain tools only. They do not get raw SQL or a full ledger dump.
-
-**Guardrails.** Review batches are redacted. A month filter is required. Batch size is limited. The PDF is a summary. It does not list every transaction.
-
-**Core.** The core does not bind to one country. Set currency and locale in config.
 
 ## CLI commands
 
@@ -159,35 +144,21 @@ canhoto categorize apply --file patches.json
 canhoto categorize merchant --key KEY --category CAT
 canhoto review --month YYYY-MM [--cursor] [--limit]
 canhoto breakdown --month YYYY-MM
-canhoto export pdf YYYY-MM
+canhoto export pdf YYYY-MM [--profile canhoto|modern|minimal] [--output PATH]
 ```
-
-Use `parsers test` before you enable a parser. There is no separate `parse` command.
-
-MCP agents use `statement_preview` for statement text. They do not receive full ledger dumps.
 
 ## Develop
 
-Install development dependencies:
-
 ```bash
 uv sync --extra dev
-```
-
-Run checks:
-
-```bash
 uv run pytest -q
 uv run ruff check src/canhoto tests
 uv run mypy -p canhoto
 ```
 
-Or use the recipes in [`justfile`](justfile) if you have [Just](https://just.systems/) installed.
-
-Agent notes: [`AGENTS.md`](AGENTS.md).
+Or use [`justfile`](justfile) with [Just](https://just.systems/).
 
 ## Privacy
 
-Keep money data in your data directory.
-
-Do not commit statements, tokens, or `~/.canhoto`.
+Your statements and database stay in the data directory. Do not commit
+statements, tokens, database files, or `~/.canhoto`.

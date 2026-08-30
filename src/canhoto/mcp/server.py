@@ -133,9 +133,11 @@ def _register_tools(server: MCPServer[Any]) -> None:
         return service.month_breakdown(month)
 
     @server.tool()
-    def export_pdf(month: str) -> dict[str, Any]:
-        """Export month summary PDF (metrics + category totals only)."""
-        return service.export_pdf(month)
+    def export_pdf(
+        month: str, output: str | None = None, profile: str = "canhoto"
+    ) -> dict[str, Any]:
+        """Export month summary PDF with a built-in visual profile."""
+        return service.export_pdf(month, output=output, profile=profile)
 
     @server.tool()
     def doctor() -> dict[str, Any]:

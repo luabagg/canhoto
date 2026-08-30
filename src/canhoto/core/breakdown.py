@@ -21,6 +21,7 @@ _EXCLUDED_SPEND_KINDS = frozenset(
         "card_payment",
         "self_transfer",
         "internal_transfer",
+        "transfer",
     }
 )
 
@@ -79,6 +80,33 @@ def compute_month_breakdown(
     )
 
 
+def compute_merchant_spend_by_category(
+    transactions: Iterable[LedgerTransaction],
+) -> dict[str, dict[str, str]]:
+    """Build exporter-only merchant totals without exposing raw descriptions.
+
+    A merchant name is included only when the parser/categorizer supplied a
+    normalized value. Rows without one are aggregated under a neutral label.
+    """
+    totals: dict[str, dict[str, Decimal]] = {}
+    for tx in transactions:
+        kind = (tx.kind or "").strip().lower()
+        if kind in _EXCLUDED_SPEND_KINDS or not _is_expense_row(tx, kind):
+            continue
+
+        category = (tx.category or "").strip() or "uncategorized"
+        merchant = (tx.merchant_normalized or "").strip() or "Unidentified merchant"
+        category_totals = totals.setdefault(category, {})
+        category_totals[merchant] = category_totals.get(merchant, Decimal("0")) + abs(
+            _major_units(tx.amount_minor)
+        )
+
+    return {
+        category: {merchant: _format_money(amount) for merchant, amount in merchants.items()}
+        for category, merchants in sorted(totals.items())
+    }
+
+
 def _is_expense_row(tx: LedgerTransaction, kind: str) -> bool:
     if tx.is_expense:
         return True
@@ -103,5 +131,6 @@ def _format_money(value: Decimal) -> str:
 
 __all__ = [
     "DEFAULT_MONTH_LIMIT",
+    "compute_merchant_spend_by_category",
     "compute_month_breakdown",
 ]

@@ -123,6 +123,17 @@ def test_month_breakdown_aggregates_only(data_home: Path) -> None:
                 is_expense=False,
                 source_kind="account",
             ),
+            # Generic transfers, including positive wallet/account movements,
+            # must not be treated as income.
+            _tx(
+                "transfer",
+                day=6,
+                amount_minor=250000,
+                category="transfer",
+                kind="transfer",
+                is_expense=False,
+                source_kind="account",
+            ),
             # Pending review expense
             _tx(
                 "pr",
@@ -157,7 +168,7 @@ def test_month_breakdown_aggregates_only(data_home: Path) -> None:
         "uncategorized": "10.00",
     }
     assert bd.pending_review == 1
-    assert bd.transaction_count == 7
+    assert bd.transaction_count == 8
     assert bd.expense_count == 3
 
     # No merchant rollups, no secret leakage in the aggregate payload.

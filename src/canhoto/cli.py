@@ -51,6 +51,11 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="+",
         help="Statement file paths (.txt or .pdf)",
     )
+    ingest_p.add_argument(
+        "--pdf-password",
+        default=None,
+        help="Password for encrypted PDFs (or set CANHOTO_PDF_PASSWORD)",
+    )
 
 
     parsers_p = sub.add_parser("parsers", help="Manage user/plugin statement parsers")
@@ -84,6 +89,11 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         dest="sample_file",
         help="Path to sample statement (.txt or .pdf)",
+    )
+    te.add_argument(
+        "--pdf-password",
+        default=None,
+        help="Password for encrypted PDFs (or set CANHOTO_PDF_PASSWORD)",
     )
 
     en = parsers_sub.add_parser(
@@ -177,6 +187,18 @@ def build_parser() -> argparse.ArgumentParser:
         "month",
         help="Target month as YYYY-MM",
     )
+    export_pdf_p.add_argument(
+        "--output",
+        "-o",
+        default=None,
+        help="Write PDF to this path (default: data-dir/exports/YYYY-MM-summary.pdf)",
+    )
+    export_pdf_p.add_argument(
+        "--profile",
+        choices=("canhoto", "modern", "minimal"),
+        default="canhoto",
+        help="Built-in visual profile (default: canhoto)",
+    )
 
     return parser
 
@@ -193,7 +215,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_json(report)
         return 0 if report.get("ok", False) else 1
     if args.cmd == "ingest":
-        return _run_service_cmd(lambda: service.ingest(args.paths))
+        return _run_service_cmd(
+            lambda: service.ingest(args.paths, pdf_password=args.pdf_password)
+        )
     if args.cmd == "parsers":
         return _run_parsers(args)
     if args.cmd == "review":
@@ -210,7 +234,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_service_cmd(lambda: service.month_breakdown(args.month))
     if args.cmd == "export":
         if args.export_cmd == "pdf":
-            return _run_service_cmd(lambda: service.export_pdf(args.month))
+            return _run_service_cmd(
+                lambda: service.export_pdf(
+                    args.month, output=args.output, profile=args.profile
+                )
+            )
         _print_json({"ok": False, "error": f"unknown export command: {args.export_cmd}"})
         return 2
 
@@ -250,7 +278,11 @@ def _run_parsers(args: argparse.Namespace) -> int:
             )
             return 0
         if args.parsers_cmd == "test":
-            result = service.parser_test(args.parser_id, args.sample_file)
+            result = service.parser_test(
+                args.parser_id,
+                args.sample_file,
+                pdf_password=args.pdf_password,
+            )
             _print_json(result)
             return 0 if result.get("ok") else 1
         if args.parsers_cmd == "enable":
