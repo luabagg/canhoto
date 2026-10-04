@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
@@ -22,6 +22,7 @@ from canhoto.core.models import (
     StatementRecord,
     StatementUpsertResult,
     UpsertResult,
+    UserRule,
 )
 
 
@@ -73,6 +74,8 @@ def _tx_to_params(tx: LedgerTransaction) -> dict[str, object]:
         "confidence": tx.confidence,
         "review_reason": tx.review_reason,
         "installment": tx.installment,
+        "classification_source": tx.classification_source,
+        "user_rule_id": tx.user_rule_id,
         "month": tx.month,
         "billing_cycle": tx.billing_cycle,
         "metadata": json.dumps(tx.metadata, ensure_ascii=False),
@@ -107,6 +110,8 @@ def _row_to_tx(row: sqlite3.Row) -> LedgerTransaction:
         confidence=float(row["confidence"] or 0.0),
         review_reason=row["review_reason"],
         installment=row["installment"],
+        classification_source=row["classification_source"],
+        user_rule_id=row["user_rule_id"],
         month=row["month"],
         billing_cycle=row["billing_cycle"],
         metadata=metadata,
@@ -152,13 +157,15 @@ def _upsert_transactions(
                   merchant_raw, merchant_normalized, source_kind, institution,
                   source_file, operation_id, running_balance_minor, account_id,
                   category, kind, is_expense, needs_review, confidence,
-                  review_reason, installment, month, billing_cycle, metadata
+                  review_reason, installment, month, billing_cycle, metadata,
+                  classification_source, user_rule_id
                 ) VALUES (
                   :id, :date, :amount_minor, :currency, :description,
                   :merchant_raw, :merchant_normalized, :source_kind, :institution,
                   :source_file, :operation_id, :running_balance_minor, :account_id,
                   :category, :kind, :is_expense, :needs_review, :confidence,
-                  :review_reason, :installment, :month, :billing_cycle, :metadata
+                  :review_reason, :installment, :month, :billing_cycle, :metadata,
+                  :classification_source, :user_rule_id
                 )
                 """,
                 params,
@@ -215,6 +222,8 @@ def _upsert_transactions(
                   confidence = :confidence,
                   review_reason = :review_reason,
                   installment = :installment,
+                  classification_source = :classification_source,
+                  user_rule_id = :user_rule_id,
                   month = :month,
                   billing_cycle = :billing_cycle,
                   metadata = :metadata,
@@ -344,6 +353,7 @@ def list_transactions(
     needs_review: bool | None = None,
     source_kind: str | None = None,
     is_expense: bool | None = None,
+    include_user_rule_flags: bool = False,
     after_id: str | None = None,
     limit: int = 500,
     path: Path | None = None,
@@ -368,8 +378,13 @@ def list_transactions(
         clauses.append("source_kind = ?")
         args.append(source_kind)
     if is_expense is not None:
-        clauses.append("is_expense = ?")
-        args.append(1 if is_expense else 0)
+        if include_user_rule_flags and is_expense:
+            # Rows a user rule flagged for confirmation can be income or transfers.
+            # Select by review_reason so the row stays visible after a partial patch.
+            clauses.append("(is_expense = 1 OR review_reason = 'user_rule_confirm')")
+        else:
+            clauses.append("is_expense = ?")
+            args.append(1 if is_expense else 0)
     if after_id is not None:
         with connect(path) as conn:
             cursor_row = conn.execute(
@@ -438,6 +453,13 @@ def apply_classifications(
             if patch.merchant_normalized is not None:
                 updates.append("merchant_normalized = ?")
                 params.append(patch.merchant_normalized)
+            if patch.classification_source is not None:
+                updates.append("classification_source = ?")
+                params.append(patch.classification_source)
+            # A new source always rewrites the link; a rule-to-rule change sets it alone.
+            if patch.classification_source is not None or "user_rule_id" in patch.model_fields_set:
+                updates.append("user_rule_id = ?")
+                params.append(patch.user_rule_id)
             if not updates:
                 applied += 1
                 continue
@@ -494,17 +516,78 @@ def set_merchant_category(
         )
 
 
+_USER_RULE_COLUMNS = (
+    "pattern, direction, min_amount_minor, max_amount_minor, source_kind,"
+    " category, kind, needs_review, note, priority"
+)
+
+
+def add_user_rule(rule: UserRule, *, path: Path | None = None) -> UserRule:
+    with connect(path) as conn:
+        cursor = conn.execute(
+            f"INSERT INTO user_rules ({_USER_RULE_COLUMNS})"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                rule.pattern,
+                rule.direction,
+                rule.min_amount_minor,
+                rule.max_amount_minor,
+                rule.source_kind,
+                rule.category,
+                rule.kind,
+                1 if rule.needs_review else 0,
+                rule.note,
+                rule.priority,
+            ),
+        )
+        rule_id = cursor.lastrowid
+    return rule.model_copy(update={"id": rule_id})
+
+
+def list_user_rules(*, path: Path | None = None) -> list[UserRule]:
+    with connect(path) as conn:
+        rows = conn.execute(
+            f"SELECT id, {_USER_RULE_COLUMNS} FROM user_rules ORDER BY priority ASC, id ASC"
+        ).fetchall()
+    return [
+        UserRule.model_validate({**dict(row), "needs_review": bool(row["needs_review"])})
+        for row in rows
+    ]
+
+
+def delete_user_rule(rule_id: int, *, path: Path | None = None) -> bool:
+    with connect(path) as conn:
+        cursor = conn.execute("DELETE FROM user_rules WHERE id = ?", (rule_id,))
+    return cursor.rowcount > 0
+
+
+def user_rule_notes(rule_ids: Iterable[int], *, path: Path | None = None) -> dict[int, str]:
+    ids = sorted(set(rule_ids))
+    if not ids:
+        return {}
+    placeholders = ", ".join("?" for _ in ids)
+    with connect(path) as conn:
+        rows = conn.execute(
+            f"SELECT id, note FROM user_rules WHERE id IN ({placeholders})", ids
+        ).fetchall()
+    return {int(row["id"]): str(row["note"]) for row in rows}
+
+
 __all__ = [
+    "add_user_rule",
     "apply_classifications",
     "connect",
     "count_pending_review",
+    "delete_user_rule",
     "ensure_schema",
     "get_merchant_category",
     "get_transaction",
     "link_statement_transactions",
+    "list_user_rules",
     "list_transactions",
     "save_statement_with_transactions",
     "set_merchant_category",
     "upsert_statement",
     "upsert_transactions",
+    "user_rule_notes",
 ]

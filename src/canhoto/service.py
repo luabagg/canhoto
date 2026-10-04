@@ -14,6 +14,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from pydantic import ValidationError
+
 from canhoto.core import breakdown as core_breakdown
 from canhoto.core import categorize as core_categorize
 from canhoto.core import config as core_config
@@ -24,10 +26,12 @@ from canhoto.core.models import (
     ParserEntry,
     ReportBundle,
     StatementRecord,
+    UserRule,
 )
 from canhoto.core.pdf_text import extract_text
 from canhoto.core.policy import assert_month, clamp_batch_size
 from canhoto.core.redaction import to_review_item
+from canhoto.core.user_rules import amount_bound_to_minor
 from canhoto.exporters.pdf_summary import PdfSummaryExporter
 from canhoto.parsers import loader as parser_loader
 from canhoto.parsers import scaffold as parser_scaffold_mod
@@ -576,10 +580,10 @@ def run_rules(
     root: Path | None = None,
     own_name_markers: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Apply deterministic rules, then merchant memory, for ``month`` (YYYY-MM).
+    """Apply user rules, deterministic rules, then merchant memory for ``month`` (YYYY-MM).
 
-    Order: rule pack → self-transfer markers → merchant_category_map recall
-    for rows still uncategorized / needs_review.
+    Order: user rules (non-manual rows) → rule pack → self-transfer markers →
+    merchant_category_map recall for rows still uncategorized / needs_review.
 
     Uses ``AppConfig.own_name_markers`` when ``own_name_markers`` is omitted.
     Never returns full ledger rows — only counts and pending-review total.
@@ -606,6 +610,7 @@ def run_rules(
         "applied": result.applied,
         "missing": list(result.missing),
         "merchant_memory_applied": result.merchant_memory_applied,
+        "user_rule_applied": result.user_rule_applied,
         "pending_review": pending,
         "own_name_markers_count": len(markers),
         "data_dir": str(data_dir.resolve()),
@@ -654,6 +659,69 @@ def set_merchant_category(
         "db_path": str(db_file),
     }
 
+# --- User classification rules ---
+
+
+def rule_add(
+    pattern: str,
+    category: str,
+    kind: str,
+    *,
+    direction: str = "any",
+    min_amount: str | None = None,
+    max_amount: str | None = None,
+    source_kind: str | None = None,
+    needs_review: bool = False,
+    note: str = "",
+    priority: int = 100,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Store a user rule. ``run_rules`` applies it to non-manual rows.
+
+    Amounts are non-negative major units ("1234.56"); bounds are inclusive.
+    Raises ``ValueError`` for an invalid regex, kind, direction, or range.
+    """
+    try:
+        rule = UserRule.model_validate(
+            {
+                "pattern": pattern,
+                "category": category,
+                "kind": kind,
+                "direction": direction,
+                "min_amount_minor": amount_bound_to_minor(min_amount),
+                "max_amount_minor": amount_bound_to_minor(max_amount),
+                "source_kind": source_kind or None,
+                "needs_review": needs_review,
+                "note": note.strip(),
+                "priority": priority,
+            }
+        )
+    except ValidationError as exc:
+        raise ValueError(str(exc)) from exc
+    data_dir = _ensure_data_dir(root)
+    db_file = core_config.db_path(data_dir)
+    stored = core_store.add_user_rule(rule, path=db_file)
+    return {"ok": True, "rule": stored.model_dump(mode="json")}
+
+
+def rule_list(*, root: Path | None = None) -> dict[str, Any]:
+    """Return all user rules in the order ``run_rules`` tries them."""
+    data_dir = _ensure_data_dir(root)
+    rules = core_store.list_user_rules(path=core_config.db_path(data_dir))
+    return {
+        "ok": True,
+        "rules": [rule.model_dump(mode="json") for rule in rules],
+        "count": len(rules),
+    }
+
+
+def rule_remove(rule_id: int, *, root: Path | None = None) -> dict[str, Any]:
+    """Delete a user rule. Rows it classified keep their classification."""
+    data_dir = _ensure_data_dir(root)
+    removed = core_store.delete_user_rule(rule_id, path=core_config.db_path(data_dir))
+    return {"ok": True, "removed": removed, "rule_id": rule_id}
+
+
 # --- Review batches + category patches ---
 
 
@@ -689,13 +757,22 @@ def review_batch(
         month=month_value,
         needs_review=True,
         is_expense=True if cfg.agent_view.expense_only else None,
+        include_user_rule_flags=True,
         after_id=cursor,
         limit=fetch_limit,
         path=db_file,
     )
     page = txs[:batch_limit]
     has_more = len(txs) > batch_limit
-    items = [to_review_item(tx, cfg.agent_view).model_dump(mode="json") for tx in page]
+    notes = core_store.user_rule_notes(
+        (tx.user_rule_id for tx in page if tx.user_rule_id is not None), path=db_file
+    )
+    items = [
+        to_review_item(tx, cfg.agent_view, rule_note=notes.get(tx.user_rule_id or -1)).model_dump(
+            mode="json"
+        )
+        for tx in page
+    ]
     next_cursor = page[-1].id if has_more and page else None
 
     out: dict[str, Any] = {
@@ -737,7 +814,11 @@ def set_categories(
     for i, raw in enumerate(patches):
         if not isinstance(raw, dict):
             raise ValueError(f"patches[{i}] must be an object")
-        parsed.append(ClassificationPatch.model_validate(raw))
+        patch = ClassificationPatch.model_validate(raw)
+        # Patches are human or agent decisions: always manual, never rule-owned.
+        parsed.append(
+            patch.model_copy(update={"classification_source": "manual", "user_rule_id": None})
+        )
 
     result = core_store.apply_classifications(parsed, path=db_file)
     return {

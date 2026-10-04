@@ -79,3 +79,28 @@ def test_cli_ingest_writes_ledger(
     archived = Path(payload["files"][0]["archived_path"])
     assert archived.is_file()
     assert archived.parent == (data_home / "raw").resolve()
+
+
+def test_cli_rules_add_list_remove(
+    data_home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli_main([
+        "rules", "add", "--pattern", "PIX RECEBIDO ACME", "--category", "Income",
+        "--kind", "income", "--direction", "in", "--min", "1200", "--max", "1300",
+        "--note", "company pay",
+    ]) == 0
+    rule_id = json.loads(capsys.readouterr().out)["rule"]["id"]
+
+    assert cli_main(["rules", "list"]) == 0
+    assert json.loads(capsys.readouterr().out)["rules"][0]["note"] == "company pay"
+
+    assert cli_main(["rules", "remove", "--id", str(rule_id)]) == 0
+    assert json.loads(capsys.readouterr().out)["removed"] is True
+
+
+def test_cli_rules_add_rejects_bad_kind(
+    data_home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = cli_main(["rules", "add", "--pattern", "X", "--category", "C", "--kind", "bogus"])
+    assert code != 0
+    assert json.loads(capsys.readouterr().out)["ok"] is False

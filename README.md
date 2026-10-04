@@ -102,6 +102,17 @@ The PDF is written to `~/.canhoto/exports/2026-06-summary.pdf` by default.
 It shows totals by category and top normalized merchants within each category.
 It never contains a full transaction table or raw statement descriptions.
 
+### Teach Canhoto your rules
+
+```bash
+canhoto rules add --pattern "PIX RECEBIDO ACME LTDA" --direction in \
+  --min 1200 --max 1300 --category Income --kind income \
+  --note "Monthly pay from my company"
+canhoto rules list
+```
+
+Rules run before the built-in rules. They never change a row that you or an agent categorized with `categorize apply` / `set_categories`. Rows you reviewed before this version are marked manual, so rules do not change them. Agents can read rule notes, so do not put secrets in them.
+
 ### PDF profiles
 
 Choose a built-in style:

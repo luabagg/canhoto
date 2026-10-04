@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from alembic import command
 from canhoto.core import migrate
 
 
@@ -45,3 +46,37 @@ def test_wipe_and_upgrade_deletes_versioned_db(tmp_path: Path) -> None:
         count = conn.execute("SELECT COUNT(*) FROM merchant_category_map").fetchone()[0]
     assert count == 0
     assert migrate.current_revision(db) == migrate.HEAD_REVISION
+
+
+def test_upgrade_adds_user_rules_and_provenance(tmp_path: Path) -> None:
+    db = tmp_path / "canhoto.db"
+    migrate.upgrade_to_head(db)
+    with sqlite3.connect(db) as conn:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(transactions)")}
+    assert "user_rules" in tables
+    assert {"classification_source", "user_rule_id"} <= columns
+
+
+def test_upgrade_marks_settled_rows_manual_and_pending_rows_parser(tmp_path: Path) -> None:
+    db = tmp_path / "canhoto.db"
+    cfg = migrate.alembic_config(db)
+    command.upgrade(cfg, "001_initial")
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "INSERT INTO transactions (id, date, amount_minor, currency, source_kind,"
+            " category, kind, month, needs_review) VALUES ('t1', '2026-06-01', -100, 'XXX',"
+            " 'card', 'Food', 'expense', '2026-06', 0)"
+        )
+        conn.execute(
+            "INSERT INTO transactions (id, date, amount_minor, currency, source_kind,"
+            " category, kind, month, needs_review) VALUES ('t2', '2026-06-02', -200, 'XXX',"
+            " 'card', '', '', '2026-06', 1)"
+        )
+        conn.commit()
+    migrate.upgrade_to_head(db)
+    with sqlite3.connect(db) as conn:
+        sources = dict(
+            conn.execute("SELECT id, classification_source FROM transactions").fetchall()
+        )
+    assert sources == {"t1": "manual", "t2": "parser"}

@@ -167,6 +167,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Category to apply on future matching rows",
     )
 
+    rule_p = sub.add_parser("rules", help="Manage user classification rules")
+    rule_sub = rule_p.add_subparsers(dest="rules_cmd", required=True)
+    add_p = rule_sub.add_parser("add", help="Store a rule that run_rules applies")
+    add_p.add_argument("--pattern", required=True, help="Case-insensitive regex on the description")
+    add_p.add_argument("--category", required=True)
+    add_p.add_argument("--kind", required=True, help="expense, income, transfer, ...")
+    add_p.add_argument("--direction", choices=("in", "out", "any"), default="any")
+    add_p.add_argument("--min", dest="min_amount", help="Minimum absolute amount, inclusive")
+    add_p.add_argument("--max", dest="max_amount", help="Maximum absolute amount, inclusive")
+    add_p.add_argument("--source-kind", help="Only rows from this source (account, card)")
+    add_p.add_argument("--review", action="store_true", help="Classify, but keep for review")
+    add_p.add_argument("--note", default="", help="Why this rule exists")
+    add_p.add_argument("--priority", type=int, default=100, help="Lower runs first")
+    rule_sub.add_parser("list", help="List rules in evaluation order")
+    rm_p = rule_sub.add_parser("remove", help="Delete a rule")
+    rm_p.add_argument("--id", dest="rule_id", type=int, required=True)
+
     breakdown_p = sub.add_parser(
         "breakdown",
         help="Aggregate month report (income/expenses/net/by_category; no tx list)",
@@ -230,6 +247,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.cmd == "categorize":
         return _run_categorize(args)
+    if args.cmd == "rules":
+        return _run_rules(args)
     if args.cmd == "breakdown":
         return _run_service_cmd(lambda: service.month_breakdown(args.month))
     if args.cmd == "export":
@@ -305,6 +324,30 @@ def _run_parsers(args: argparse.Namespace) -> int:
         return 1
 
     _print_json({"ok": False, "error": f"unknown parsers command: {args.parsers_cmd}"})
+    return 2
+
+
+def _run_rules(args: argparse.Namespace) -> int:
+    if args.rules_cmd == "add":
+        return _run_service_cmd(
+            lambda: service.rule_add(
+                args.pattern,
+                args.category,
+                args.kind,
+                direction=args.direction,
+                min_amount=args.min_amount,
+                max_amount=args.max_amount,
+                source_kind=args.source_kind,
+                needs_review=args.review,
+                note=args.note,
+                priority=args.priority,
+            )
+        )
+    if args.rules_cmd == "list":
+        return _run_service_cmd(service.rule_list)
+    if args.rules_cmd == "remove":
+        return _run_service_cmd(lambda: service.rule_remove(args.rule_id))
+    _print_json({"ok": False, "error": f"unknown rules command: {args.rules_cmd}"})
     return 2
 
 

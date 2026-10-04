@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 
 from canhoto.core.config import db_path
 
-HEAD_REVISION = "001_initial"
+HEAD_REVISION = "002_user_rules"
 
 
 def migrations_dir() -> Path:

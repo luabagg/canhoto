@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from canhoto import service
 from canhoto.cli import main as cli_main
 from canhoto.core import config as core_config
-from canhoto.core.models import LedgerTransaction
+from canhoto.core.models import LedgerTransaction, ReportBundle
 from canhoto.core.store import ensure_schema, upsert_transactions
 from canhoto.mcp.server import create_server
 
@@ -277,3 +278,101 @@ def test_pdf_summary_shows_normalized_merchants_by_category(data_home: Path) -> 
     assert "private unnormalized memo" not in text
     # Must not dump raw transaction ids as a full ledger table.
     assert "e1" not in text
+
+
+def _summary_bundle(
+    by_category: dict[str, str],
+    merchants: dict[str, dict[str, str]] | None = None,
+) -> ReportBundle:
+    from canhoto.core.models import MonthBreakdown, ReportBundle
+
+    total = sum(Decimal(value) for value in by_category.values())
+    return ReportBundle(
+        breakdown=MonthBreakdown(
+            month="2026-08",
+            income="0.00",
+            expenses=f"{total:.2f}",
+            net=f"{-total:.2f}",
+            by_category=by_category,
+            pending_review=0,
+            transaction_count=len(by_category),
+            expense_count=len(by_category),
+        ),
+        merchant_spend_by_category=merchants or {},
+        generated_at="2026-08-31T00:00:00Z",
+        title="Canhoto summary — 2026-08",
+    )
+
+
+def test_chart_legend_merges_real_other_category_into_rollup(tmp_path: Path) -> None:
+    import fitz
+    from canhoto.exporters.pdf_summary import PdfSummaryExporter
+
+    categories = {f"Category {index}": f"{100 - index}.00" for index in range(8)}
+    categories["Other"] = "500.00"  # ranks first, so it is kept beside the rollup
+    output = tmp_path / "other.pdf"
+    PdfSummaryExporter(profile="canhoto").export(_summary_bundle(categories), output)
+
+    lines = [line.strip() for line in fitz.open(output)[0].get_text().splitlines()]
+    assert lines.count("Other") == 1
+
+
+def test_chart_pie_fills_the_whole_ring_around_its_center(tmp_path: Path) -> None:
+    import fitz
+    from canhoto.exporters.pdf_summary import PdfSummaryExporter
+
+    output = tmp_path / "pie.pdf"
+    PdfSummaryExporter(profile="canhoto").export(
+        _summary_bundle({"Groceries": "50.00", "Fuel": "30.00", "Health": "20.00"}),
+        output,
+    )
+
+    page = fitz.open(output)[0]
+    label = page.search_for("TOTAL")[0]
+    mm = 72 / 25.4
+    center_x = (label.x0 + label.x1) / 2
+    center_y = label.y1 + 2 * mm  # label cell sits just above the pie center
+    pixmap = page.get_pixmap(dpi=72)
+    paper = pixmap.pixel(1, 1)
+    ring = 21 * mm  # between the 15 mm hole and the 26 mm outer radius
+    for dx, dy in ((ring, 0), (-ring, 0), (0, ring), (0, -ring)):
+        assert pixmap.pixel(int(center_x + dx), int(center_y + dy)) != paper
+
+
+def test_truncated_names_end_with_ascii_ellipsis(tmp_path: Path) -> None:
+    import fitz
+    from canhoto.exporters.pdf_summary import PdfSummaryExporter
+
+    long_name = "VERY LONG MERCHANT NAME THAT DOES NOT FIT"
+    output = tmp_path / "truncate.pdf"
+    PdfSummaryExporter(profile="canhoto").export(
+        _summary_bundle({"Groceries": "10.00"}, {"Groceries": {long_name: "10.00"}}),
+        output,
+    )
+
+    text = fitz.open(output)[0].get_text()
+    assert f"{long_name[:27]}..." in text
+    assert "?" not in text
+
+
+def test_merchant_rows_keep_one_font_size_across_page_breaks(tmp_path: Path) -> None:
+    import fitz
+    from canhoto.exporters.pdf_summary import PdfSummaryExporter
+
+    merchants = {
+        f"Category {index:02d}": {f"Merchant {index:02d}-{n}": "1.00" for n in range(4)}
+        for index in range(20)
+    }
+    by_category = {name: "4.00" for name in merchants}
+    output = tmp_path / "fonts.pdf"
+    PdfSummaryExporter(profile="canhoto").export(_summary_bundle(by_category, merchants), output)
+
+    sizes = {
+        round(span["size"], 1)
+        for page in fitz.open(output)
+        for block in page.get_text("dict")["blocks"]
+        for line in block.get("lines", [])
+        for span in line["spans"]
+        if span["text"].strip().startswith(("Merchant ", "Other merchants"))
+    }
+    assert sizes == {8.0}

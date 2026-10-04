@@ -21,6 +21,7 @@ _RED = (239, 68, 68)
 _PINK = (236, 72, 153)
 _SLATE = (71, 85, 105)
 _CHART_COLORS = (_BLUE, _TEAL, _PURPLE, _ORANGE, _PINK, _RED, _SLATE)
+_OTHER = "Other"
 
 # canhoto (receipt)
 _PAPER = (244, 232, 190)
@@ -217,13 +218,16 @@ class PdfSummaryExporter:
             for _, amount, color in chart_rows:
                 sweep = float(amount / total * 360)
                 pdf.set_fill_color(*color)
-                pdf.solid_arc(
+                # arc() takes the bounding-box diameter. solid_arc() documents a
+                # semi-axis but forwards it to arc() unchanged (fpdf2 2.8.7).
+                pdf.arc(
                     center_x - radius,
                     center_y - radius,
-                    radius,
+                    2 * radius,
                     angle,
                     angle + sweep,
-                    b=radius,
+                    start_from_center=True,
+                    end_at_center=True,
                     style="F",
                 )
                 angle += sweep
@@ -304,9 +308,10 @@ class PdfSummaryExporter:
                 new_x="LMARGIN",
                 new_y="NEXT",
             )
-            pdf.set_font("Courier" if self.profile != "minimal" else "Helvetica", size=8)
             for merchant, amount in _top_merchants(merchants):
                 self._ensure_receipt_space(pdf, row_height)
+                # Set per row: a continuation page heading changes the font.
+                pdf.set_font("Courier" if self.profile != "minimal" else "Helvetica", size=8)
                 label = _safe(_truncate(merchant, 30))
                 formatted = _brl(amount)
                 dots = "." * max(3, 41 - len(label) - len(formatted))
@@ -372,15 +377,20 @@ class PdfSummaryExporter:
 
 
 def _chart_rows(categories: dict[str, str]) -> list[tuple[str, Decimal, tuple[int, int, int]]]:
+    """Return chart slices; a real "Other" category joins the overflow slice."""
     rows = sorted(
-        ((name, _amount(value)) for name, value in categories.items()),
+        ((name, _amount(value)) for name, value in categories.items() if name != _OTHER),
         key=lambda item: item[1],
         reverse=True,
     )
-    if len(rows) > len(_CHART_COLORS):
-        kept = rows[: len(_CHART_COLORS) - 1]
-        other = sum((amount for _, amount in rows[len(_CHART_COLORS) - 1 :]), Decimal(0))
-        rows = [*kept, ("Other", other)]
+    other = _amount(categories.get(_OTHER, "0"))
+    slots = len(_CHART_COLORS) - (1 if other else 0)
+    if len(rows) > slots:
+        kept = len(_CHART_COLORS) - 1
+        other += sum((amount for _, amount in rows[kept:]), Decimal(0))
+        rows = rows[:kept]
+    if other:
+        rows.append((_OTHER, other))
     return [(name, amount, _CHART_COLORS[index]) for index, (name, amount) in enumerate(rows)]
 
 
@@ -413,7 +423,8 @@ def _brl(value: str | Decimal, *, show_sign: bool = False) -> str:
 
 
 def _truncate(value: str, length: int) -> str:
-    return value if len(value) <= length else f"{value[: length - 1]}…"
+    # ASCII dots: core PDF fonts are Latin-1 and cannot encode "…".
+    return value if len(value) <= length else f"{value[: length - 3]}..."
 
 
 def _safe(value: object) -> str:

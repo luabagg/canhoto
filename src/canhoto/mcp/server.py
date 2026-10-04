@@ -20,7 +20,12 @@ _INSTRUCTIONS = (
     "Happy path for agents:\n"
     "1. statement_preview → parser_scaffold / parser_write → parser_test → parser_enable\n"
     "2. ingest\n"
-    "3. run_rules → review_batch loop → set_categories (and set_merchant_category as needed)\n"
+    "3. rule_list (read the notes) → run_rules → review_batch loop → set_categories\n"
+    "   (and set_merchant_category as needed).\n"
+    "   When the user explains a recurring counterparty, store it with rule_add and a note.\n"
+    "   Use needs_review=true when an amount range cannot separate the cases.\n"
+    "   To confirm a flagged row, send set_categories with needs_review=false"
+    " and review_reason=null.\n"
     "4. month_breakdown → export_pdf\n"
     "\n"
     "Constraints:\n"
@@ -126,6 +131,36 @@ def _register_tools(server: MCPServer[Any]) -> None:
     def set_merchant_category(merchant_key: str, category: str) -> dict[str, Any]:
         """Remember merchant_key → category for later rule runs."""
         return service.set_merchant_category(merchant_key, category)
+
+    @server.tool()
+    def rule_list() -> dict[str, Any]:
+        """List user classification rules and their notes, in evaluation order."""
+        return service.rule_list()
+
+    @server.tool()
+    def rule_add(
+        pattern: str,
+        category: str,
+        kind: str,
+        direction: str = "any",
+        min_amount: str | None = None,
+        max_amount: str | None = None,
+        source_kind: str | None = None,
+        needs_review: bool = False,
+        note: str = "",
+        priority: int = 100,
+    ) -> dict[str, Any]:
+        """Store a rule the user stated. Always include a note that says why."""
+        return service.rule_add(
+            pattern, category, kind, direction=direction, min_amount=min_amount,
+            max_amount=max_amount, source_kind=source_kind, needs_review=needs_review,
+            note=note, priority=priority,
+        )
+
+    @server.tool()
+    def rule_remove(rule_id: int) -> dict[str, Any]:
+        """Delete a user classification rule."""
+        return service.rule_remove(rule_id)
 
     @server.tool()
     def month_breakdown(month: str) -> dict[str, Any]:

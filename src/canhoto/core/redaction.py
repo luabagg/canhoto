@@ -24,7 +24,9 @@ def merchant_display(tx: Transaction) -> str:
     return ""
 
 
-def to_review_item(tx: Transaction, view: AgentViewConfig) -> ReviewItem:
+def to_review_item(
+    tx: Transaction, view: AgentViewConfig, *, rule_note: str | None = None
+) -> ReviewItem:
     """Project a transaction-like object into a redacted ``ReviewItem``.
 
     Never copies raw description, source paths, operation ids, balances,
@@ -55,6 +57,7 @@ def to_review_item(tx: Transaction, view: AgentViewConfig) -> ReviewItem:
         confidence=float(getattr(tx, "confidence", 0.0) or 0.0),
         review_reason=_optional_text(getattr(tx, "review_reason", None)),
         installment=_optional_text(getattr(tx, "installment", None)),
+        rule_note=rule_note,
     )
 
 

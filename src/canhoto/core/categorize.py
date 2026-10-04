@@ -18,7 +18,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from canhoto.core import store as core_store
-from canhoto.core.models import ClassificationPatch, ClassificationResult, LedgerTransaction
+from canhoto.core.models import (
+    ClassificationPatch,
+    ClassificationResult,
+    ClassificationSource,
+    LedgerTransaction,
+    UserRule,
+)
+from canhoto.core.user_rules import match_user_rule
 
 # Month listing ceiling for a single rules pass (household-scale statements).
 _DEFAULT_MONTH_LIMIT = 50_000
@@ -42,7 +49,7 @@ def _compile(pattern: str) -> re.Pattern[str]:
 # Portable defaults only — no personal names, no household-specific merchants.
 DEFAULT_RULES: tuple[Rule, ...] = (
     Rule(
-        _compile(r"PAGAMENTO\s+(DA\s+)?FATURA|PAGAMENTO\s+CART[AÃ]O"),
+        _compile(r"PAGAMENTO\s+(D[AE]\s+)?FATURA|PAGAMENTO\s+CART[AÃ]O"),
         category="transfer",
         kind="card_payment",
         is_expense=False,
@@ -75,14 +82,19 @@ def apply_rules(
     *,
     own_name_markers: list[str] | None = None,
     rules: Sequence[Rule] | None = None,
+    user_rules: Sequence[UserRule] = (),
 ) -> LedgerTransaction:
     """Return a deep-copied row with classification fields filled by rules.
 
     Does not mutate ``tx``. Does not touch the store.
-    Rows already settled (not needs_review, non-empty category other than
-    ``uncategorized``) are left unchanged so human/memory labels stick.
+    User rules run first and may reclassify any row a human did not set.
+    Built-in rules only touch rows that still need review.
     """
     out = tx.model_copy(deep=True)
+    if out.classification_source != "manual":
+        user_rule = match_user_rule(out, user_rules, text=_description_blob(out))
+        if user_rule is not None:
+            return _apply_user_rule(out, user_rule)
     if not _eligible_for_rule_reclassify(out):
         return out
     desc = _description_blob(out)
@@ -101,6 +113,8 @@ def apply_rules(
                 needs_review=False,
                 review_reason=None,
                 merchant_normalized=out.merchant_normalized or _normalize_merchant(desc),
+                source="builtin_rule",
+                user_rule_id=None,
             )
 
     # 2) Self-transfer: PIX/TED-style counterparty contains a configured marker.
@@ -114,6 +128,8 @@ def apply_rules(
             needs_review=False,
             review_reason=None,
             merchant_normalized=out.merchant_normalized or _normalize_merchant(desc),
+            source="builtin_rule",
+            user_rule_id=None,
         )
 
     # 3) Sign / source defaults — leave uncertain rows for review.
@@ -130,6 +146,8 @@ def apply_rules(
             needs_review=True,
             review_reason=out.review_reason or "income_unclassified",
             merchant_normalized=out.merchant_normalized or _normalize_merchant(desc),
+            source=out.classification_source,
+            user_rule_id=out.user_rule_id,
         )
 
     if amount_minor < 0:
@@ -142,6 +160,8 @@ def apply_rules(
             needs_review=True,
             review_reason=out.review_reason or "needs_category",
             merchant_normalized=out.merchant_normalized or _normalize_merchant(desc),
+            source=out.classification_source,
+            user_rule_id=out.user_rule_id,
         )
 
     # Zero-amount or ambiguous sign.
@@ -154,6 +174,23 @@ def apply_rules(
         needs_review=True,
         review_reason=out.review_reason or "unknown",
         merchant_normalized=out.merchant_normalized or _normalize_merchant(desc) or None,
+        source=out.classification_source,
+        user_rule_id=out.user_rule_id,
+    )
+
+
+def _apply_user_rule(tx: LedgerTransaction, rule: UserRule) -> LedgerTransaction:
+    return _classify(
+        tx,
+        category=rule.category,
+        kind=rule.kind,
+        is_expense=rule.is_expense,
+        confidence=0.6 if rule.needs_review else 1.0,
+        needs_review=rule.needs_review,
+        review_reason="user_rule_confirm" if rule.needs_review else None,
+        merchant_normalized=tx.merchant_normalized,
+        source="user_rule",
+        user_rule_id=rule.id,
     )
 
 
@@ -168,21 +205,23 @@ def run_rules_for_month(
     """List month transactions, apply rules, then merchant memory, persist patches.
 
     Order:
-    1. Deterministic rule pack + self-transfer markers
-    2. Merchant category memory for rows still needing review
+    1. User rules (non-manual rows)
+    2. Built-in rule pack and self-transfer markers (pending rows)
+    3. Merchant memory (pending rows)
     """
     _validate_month(month)
+    user_rules = core_store.list_user_rules(path=path)
     txs = core_store.list_transactions(month=month, limit=limit, path=path)
     patches: list[ClassificationPatch] = []
+    user_rule_applied = 0
     for tx in txs:
         classified = apply_rules(
-            tx,
-            own_name_markers=own_name_markers,
-            rules=rules,
+            tx, own_name_markers=own_name_markers, rules=rules, user_rules=user_rules
         )
         patch = _diff_classification(tx, classified)
         if patch is not None:
             patches.append(patch)
+            user_rule_applied += classified.classification_source == "user_rule"
     if patches:
         rules_result = core_store.apply_classifications(patches, path=path)
     else:
@@ -193,6 +232,7 @@ def run_rules_for_month(
         applied=rules_result.applied + memory_result.applied,
         missing=list(rules_result.missing) + list(memory_result.missing),
         merchant_memory_applied=memory_result.applied,
+        user_rule_applied=user_rule_applied,
     )
 
 
@@ -267,7 +307,12 @@ def merchant_key_for(tx: LedgerTransaction) -> str | None:
 
 
 def _eligible_for_rule_reclassify(tx: LedgerTransaction) -> bool:
-    """True when rules may overwrite classification fields."""
+    """True when automatic rules may overwrite classification fields.
+
+    Rows a human set (``manual``) are never eligible, even when still pending.
+    """
+    if tx.classification_source == "manual":
+        return False
     if tx.needs_review:
         return True
     cat = (tx.category or "").strip().lower()
@@ -275,6 +320,9 @@ def _eligible_for_rule_reclassify(tx: LedgerTransaction) -> bool:
 
 
 def _eligible_for_merchant_memory(tx: LedgerTransaction) -> bool:
+    """Merchant memory skips rows that a user rule owns, even when they await confirmation."""
+    if tx.classification_source == "user_rule":
+        return False
     return _eligible_for_rule_reclassify(tx)
 
 
@@ -303,6 +351,8 @@ def _classify_from_merchant_memory(
         or merchant_key_for(tx)
         or _normalize_merchant(_description_blob(tx))
         or None,
+        source="merchant_memory",
+        user_rule_id=None,
     )
 
 
@@ -319,6 +369,8 @@ def _diff_classification(
         "confidence",
         "review_reason",
         "merchant_normalized",
+        "classification_source",
+        "user_rule_id",
     )
     changed: dict[str, object] = {}
     for name in fields:
@@ -341,6 +393,8 @@ def _classify(
     needs_review: bool,
     review_reason: str | None,
     merchant_normalized: str | None,
+    source: ClassificationSource,
+    user_rule_id: int | None,
 ) -> LedgerTransaction:
     return tx.model_copy(
         update={
@@ -351,6 +405,8 @@ def _classify(
             "needs_review": needs_review,
             "review_reason": review_reason,
             "merchant_normalized": merchant_normalized,
+            "classification_source": source,
+            "user_rule_id": user_rule_id,
         }
     )
 

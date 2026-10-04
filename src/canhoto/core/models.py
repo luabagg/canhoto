@@ -7,12 +7,94 @@ metadata bags).
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# Who set a row's classification. User rules never overwrite "manual".
+ClassificationSource = Literal["parser", "builtin_rule", "user_rule", "merchant_memory", "manual"]
+
+# Kinds a user rule may set. Must equal breakdown._EXCLUDED_SPEND_KINDS plus
+# expense and income; a test locks this, because an unknown non-expense kind
+# is counted as income.
+USER_RULE_KINDS = frozenset(
+    {"expense", "income", "transfer", "internal_transfer", "self_transfer", "card_payment"}
+)
+_MAX_PATTERN_LENGTH = 200
+
+
+class UserRule(BaseModel):
+    """User-defined classification rule stored in ``user_rules``."""
+
+    id: int | None = None
+    pattern: str
+    direction: Literal["in", "out", "any"] = "any"
+    min_amount_minor: int | None = Field(default=None, ge=0)
+    max_amount_minor: int | None = Field(default=None, ge=0)
+    source_kind: str | None = None
+    category: str
+    kind: str
+    needs_review: bool = False
+    note: str = ""
+    priority: int = 100
+
+    @field_validator("pattern")
+    @classmethod
+    def _pattern_must_compile(cls, value: str) -> str:
+        pattern = value.strip()
+        if not pattern or len(pattern) > _MAX_PATTERN_LENGTH:
+            raise ValueError(f"pattern must have 1 to {_MAX_PATTERN_LENGTH} characters")
+        try:
+            re.compile(pattern, re.IGNORECASE)
+        except re.error as exc:
+            raise ValueError(f"pattern is not a valid regex: {exc}") from exc
+        return pattern
+
+    @field_validator("category")
+    @classmethod
+    def _category_must_be_set(cls, value: str) -> str:
+        category = value.strip()
+        if not category:
+            raise ValueError("category must be a non-empty string")
+        return category
+
+    @field_validator("kind")
+    @classmethod
+    def _kind_must_be_known(cls, value: str) -> str:
+        kind = value.strip()
+        if kind not in USER_RULE_KINDS:
+            raise ValueError(f"kind must be one of: {', '.join(sorted(USER_RULE_KINDS))}")
+        return kind
+
+    @field_validator("source_kind")
+    @classmethod
+    def _normalize_source_kind(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip().lower() or None
+
+    @model_validator(mode="after")
+    def _bounds_must_be_ordered(self) -> UserRule:
+        low, high = self.min_amount_minor, self.max_amount_minor
+        if low is not None and high is not None and low > high:
+            raise ValueError("min amount must not exceed max amount")
+        return self
+
+    @model_validator(mode="after")
+    def _kind_must_fit_direction(self) -> UserRule:
+        if self.kind == "income" and self.direction == "out":
+            raise ValueError("income kind cannot use direction out")
+        if self.kind == "expense" and self.direction == "in":
+            raise ValueError("expense kind cannot use direction in")
+        return self
+
+    @property
+    def is_expense(self) -> bool:
+        return self.kind == "expense"
 
 
 class StatementType(StrEnum):
@@ -106,6 +188,8 @@ class ReviewItem(BaseModel):
     confidence: float = 0.0
     review_reason: str | None = None
     installment: str | None = None
+    # Reason from the user rule that classified this row, if any.
+    rule_note: str | None = None
 
 
 class MonthBreakdown(BaseModel):
@@ -164,6 +248,8 @@ class LedgerTransaction(BaseModel):
     confidence: float = 0.0
     review_reason: str | None = None
     installment: str | None = None
+    classification_source: ClassificationSource = "parser"
+    user_rule_id: int | None = None
     month: str  # YYYY-MM
     billing_cycle: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -224,6 +310,9 @@ class ClassificationPatch(BaseModel):
     confidence: float | None = None
     review_reason: str | None = None
     merchant_normalized: str | None = None
+    # When set, apply_classifications also rewrites user_rule_id.
+    classification_source: ClassificationSource | None = None
+    user_rule_id: int | None = None
 
 
 class UpsertResult(BaseModel):
@@ -237,6 +326,8 @@ class ClassificationResult(BaseModel):
     missing: list[str] = Field(default_factory=list)
     # Rows classified via merchant_category_map after the rule pack.
     merchant_memory_applied: int = 0
+    # Rows classified by a user rule in this run.
+    user_rule_applied: int = 0
 
 
 class StatementUpsertResult(BaseModel):

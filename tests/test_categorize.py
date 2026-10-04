@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+import pytest
 from canhoto.core.categorize import apply_rules, run_rules_for_month
 from canhoto.core.models import LedgerTransaction
 from canhoto.core.store import ensure_schema, get_transaction, upsert_transactions
@@ -45,9 +46,17 @@ def _tx(
     )
 
 
-def test_card_payment_is_not_expense() -> None:
+@pytest.mark.parametrize(
+    "description",
+    [
+        "PAGAMENTO FATURA CARTAO FINAL 1234",
+        "PAGAMENTO DA FATURA CARTAO",
+        "PAGAMENTO DE FATURA CARTAO DE CREDITO",
+    ],
+)
+def test_card_payment_is_not_expense(description: str) -> None:
     tx = _tx(
-        description="PAGAMENTO FATURA CARTAO FINAL 1234",
+        description=description,
         amount_minor=-150000,
         source_kind="account",
     )

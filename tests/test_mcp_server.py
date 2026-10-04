@@ -27,6 +27,8 @@ def test_server_instructions_describe_happy_path() -> None:
         "parser_test",
         "parser_enable",
         "ingest",
+        "rule_list",
+        "rule_add",
         "run_rules",
         "review_batch",
         "set_categories",

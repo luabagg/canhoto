@@ -237,3 +237,25 @@ def test_set_categories_applies_patches(data_home: Path) -> None:
     pending = service.review_batch("2026-06")
     assert pending["count"] == 0
     assert pending["items"] == []
+
+
+def test_review_batch_still_hides_parser_income_when_expense_only(data_home: Path) -> None:
+    upsert_transactions(
+        [
+            LedgerTransaction(
+                id="inc1",
+                date=date(2026, 6, 3),
+                amount_minor=10000,
+                currency="XXX",
+                description="PIX RECEBIDO JANE DOE",
+                source_kind="account",
+                category="income",
+                kind="income",
+                needs_review=True,
+                month="2026-06",
+            )
+        ],
+        path=core_config.db_path(data_home),
+    )
+    ids = [item["id"] for item in service.review_batch("2026-06")["items"]]
+    assert "inc1" not in ids
