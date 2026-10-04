@@ -98,6 +98,7 @@ def apply_rules(
     if not _eligible_for_rule_reclassify(out):
         return out
     desc = _description_blob(out)
+    merchant = out.merchant_normalized or _normalize_merchant(_merchant_text(out))
     markers = [m for m in (own_name_markers or []) if m and m.strip()]
     pack = list(rules) if rules is not None else default_rules()
 
@@ -112,7 +113,7 @@ def apply_rules(
                 confidence=rule.confidence,
                 needs_review=False,
                 review_reason=None,
-                merchant_normalized=out.merchant_normalized or _normalize_merchant(desc),
+                merchant_normalized=merchant,
                 source="builtin_rule",
                 user_rule_id=None,
             )
@@ -127,7 +128,7 @@ def apply_rules(
             confidence=0.9,
             needs_review=False,
             review_reason=None,
-            merchant_normalized=out.merchant_normalized or _normalize_merchant(desc),
+            merchant_normalized=merchant,
             source="builtin_rule",
             user_rule_id=None,
         )
@@ -145,7 +146,7 @@ def apply_rules(
             confidence=max(out.confidence, 0.4),
             needs_review=True,
             review_reason=out.review_reason or "income_unclassified",
-            merchant_normalized=out.merchant_normalized or _normalize_merchant(desc),
+            merchant_normalized=merchant,
             source=out.classification_source,
             user_rule_id=out.user_rule_id,
         )
@@ -159,7 +160,7 @@ def apply_rules(
             confidence=max(out.confidence, 0.2),
             needs_review=True,
             review_reason=out.review_reason or "needs_category",
-            merchant_normalized=out.merchant_normalized or _normalize_merchant(desc),
+            merchant_normalized=merchant,
             source=out.classification_source,
             user_rule_id=out.user_rule_id,
         )
@@ -173,7 +174,7 @@ def apply_rules(
         confidence=out.confidence,
         needs_review=True,
         review_reason=out.review_reason or "unknown",
-        merchant_normalized=out.merchant_normalized or _normalize_merchant(desc) or None,
+        merchant_normalized=merchant or None,
         source=out.classification_source,
         user_rule_id=out.user_rule_id,
     )
@@ -188,7 +189,7 @@ def _apply_user_rule(tx: LedgerTransaction, rule: UserRule) -> LedgerTransaction
         confidence=0.6 if rule.needs_review else 1.0,
         needs_review=rule.needs_review,
         review_reason="user_rule_confirm" if rule.needs_review else None,
-        merchant_normalized=tx.merchant_normalized,
+        merchant_normalized=tx.merchant_normalized or _normalize_merchant(_merchant_text(tx)),
         source="user_rule",
         user_rule_id=rule.id,
     )
@@ -300,7 +301,7 @@ def merchant_key_for(tx: LedgerTransaction) -> str | None:
     """Stable learnable key for a row, or None if nothing safe to remember."""
     key = (tx.merchant_normalized or "").strip()
     if not key:
-        key = _normalize_merchant(_description_blob(tx)).strip()
+        key = _normalize_merchant(_merchant_text(tx)).strip()
     if not key or not is_learnable_merchant_key(key):
         return None
     return key
@@ -349,7 +350,7 @@ def _classify_from_merchant_memory(
         review_reason=None,
         merchant_normalized=tx.merchant_normalized
         or merchant_key_for(tx)
-        or _normalize_merchant(_description_blob(tx))
+        or _normalize_merchant(_merchant_text(tx))
         or None,
         source="merchant_memory",
         user_rule_id=None,
@@ -409,6 +410,11 @@ def _classify(
             "user_rule_id": user_rule_id,
         }
     )
+
+
+def _merchant_text(tx: LedgerTransaction) -> str:
+    """Merchant name source: merchant_raw, else description (never both joined)."""
+    return tx.merchant_raw or tx.description or ""
 
 
 def _description_blob(tx: LedgerTransaction) -> str:

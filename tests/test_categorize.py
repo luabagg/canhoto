@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-from canhoto.core.categorize import apply_rules, run_rules_for_month
+from canhoto.core.categorize import apply_rules, merchant_key_for, run_rules_for_month
 from canhoto.core.models import LedgerTransaction
 from canhoto.core.store import ensure_schema, get_transaction, upsert_transactions
 
@@ -157,3 +157,13 @@ def test_run_rules_updates_store_for_month(tmp_path: Path) -> None:
     assert stored_other is not None
     assert stored_other.kind == ""
     assert stored_other.needs_review is True
+
+
+def test_rules_normalize_merchant_without_repeating_it() -> None:
+    """description and merchant_raw are usually equal; the name must appear once."""
+    out = apply_rules(_tx(description="ACME STORE", source_kind="card"))
+    assert out.merchant_normalized == "ACME STORE"
+
+
+def test_merchant_key_uses_merchant_text_once() -> None:
+    assert merchant_key_for(_tx(description="ACME STORE")) == "ACME STORE"

@@ -502,3 +502,8 @@ def test_partial_patch_keeps_flagged_row_in_review_until_confirmed(data_home: Pa
         [{"id": "a1", "needs_review": False, "review_reason": None}]
     )
     assert service.review_batch("2026-06")["items"] == []
+
+
+def test_user_rule_fills_normalized_merchant_name() -> None:
+    out = apply_rules(_tx("a1"), user_rules=[_rule(id=7)])
+    assert out.merchant_normalized == "ACME LTDA"
