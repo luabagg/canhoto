@@ -1,17 +1,17 @@
 [project]
 name = "canhoto"
 version = "0.1.0"
-description = "Canhoto — local statement → ledger → categorize → summary PDF engine (CLI + MCP)"
+description = "Local bank statement ledger: parse, categorize, and export monthly PDF summaries (CLI and MCP)"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
-authors = [{ name = "Canhoto contributors" }]
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "luabagg" }]
 keywords = ["finance", "ledger", "mcp", "cli", "pdf"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Environment :: Console",
   "Intended Audience :: End Users/Desktop",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -38,11 +38,12 @@ canhoto = "canhoto.cli:main"
 canhoto-mcp = "canhoto.mcp.server:main"
 
 [project.urls]
-Homepage = "https://github.com/luanbaggio/canhoto"
-Documentation = "https://github.com/luanbaggio/canhoto/blob/main/README.md"
+Homepage = "https://github.com/luabagg/canhoto"
+Documentation = "https://github.com/luabagg/canhoto/blob/main/README.md"
+Issues = "https://github.com/luabagg/canhoto/issues"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
@@ -54,6 +55,7 @@ include = [
   "tests",
   "examples",
   "README.md",
+  "LICENSE",
   "AGENTS.md",
   "pyproject.toml",
 ]
