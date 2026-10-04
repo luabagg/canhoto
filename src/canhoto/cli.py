@@ -104,6 +104,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     parsers_sub.add_parser("list", help="List registered parsers and test/enable status")
 
+    pv = parsers_sub.add_parser(
+        "preview",
+        help="Print the text a parser receives for a statement file",
+    )
+    pv.add_argument(
+        "--file",
+        required=True,
+        dest="sample_file",
+        help="Path to a statement (.txt or .pdf)",
+    )
+    pv.add_argument(
+        "--pdf-password",
+        default=None,
+        help="Password for encrypted PDFs (or set CANHOTO_PDF_PASSWORD)",
+    )
+
     review_p = sub.add_parser(
         "review",
         help="Fetch a redacted pending-review batch for a month (YYYY-MM)",
@@ -310,6 +326,11 @@ def _run_parsers(args: argparse.Namespace) -> int:
         if args.parsers_cmd == "list":
             _print_json(service.parser_list())
             return 0
+        if args.parsers_cmd == "preview":
+            _print_preview(
+                service.statement_preview(args.sample_file, pdf_password=args.pdf_password)
+            )
+            return 0
     except (
         ValueError,
         FileNotFoundError,
@@ -349,6 +370,18 @@ def _run_rules(args: argparse.Namespace) -> int:
         return _run_service_cmd(lambda: service.rule_remove(args.rule_id))
     _print_json({"ok": False, "error": f"unknown rules command: {args.rules_cmd}"})
     return 2
+
+
+def _print_preview(preview: dict[str, Any]) -> None:
+    """Print raw statement text; a truncation note goes to stderr."""
+    text = str(preview["text"])
+    print(text, end="" if text.endswith("\n") else "\n")
+    if preview["truncated"]:
+        print(
+            f"[canhoto] preview truncated: {len(text)} of {preview['char_count']} characters."
+            " Raise agent_view.preview_max_chars in config.json to see more.",
+            file=sys.stderr,
+        )
 
 
 def _run_categorize(args: argparse.Namespace) -> int:

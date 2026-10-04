@@ -288,3 +288,90 @@ def test_parser_entry_last_test_fields_default_none() -> None:
     assert entry.last_test_ok is None
     assert entry.last_test_at is None
     assert entry.last_test_error is None
+
+
+def _load_scaffolded(data_home: Path, parser_id: str = "demo_card"):  # type: ignore[no-untyped-def]
+    from canhoto.parsers.loader import load_parser_by_id
+
+    return load_parser_by_id(load_config(data_home), parser_id, root=data_home)
+
+
+def test_scaffold_parse_skeleton_reads_example_rows(data_home: Path) -> None:
+    service.parser_scaffold("demo_card", "card", "demo", root=data_home)
+    parser = _load_scaffolded(data_home)
+
+    text = "header\n2026-06-02  ACME STORE  -12.34\n2026-06-03  REFUND ACME  5.00\nfooter\n"
+    txs = parser.parse(text, "/tmp/s.txt").transactions
+
+    assert [(t.date.isoformat(), t.amount_minor, t.description) for t in txs] == [
+        ("2026-06-02", -1234, "ACME STORE"),
+        ("2026-06-03", 500, "REFUND ACME"),
+    ]
+    assert {t.month for t in txs} == {"2026-06"}
+    assert all(t.category == "" and t.needs_review for t in txs)
+
+
+def test_scaffold_ids_do_not_depend_on_row_position(data_home: Path) -> None:
+    service.parser_scaffold("demo_card", "card", "demo", root=data_home)
+    parser = _load_scaffolded(data_home)
+    row = "2026-06-02  ACME STORE  -12.34"
+
+    alone = parser.parse(f"{row}\n", "/tmp/a.txt").transactions
+    after_other = parser.parse(f"2026-06-01  OTHER  -1.00\n{row}\n", "/tmp/b.txt").transactions
+    twice = parser.parse(f"{row}\n{row}\n", "/tmp/c.txt").transactions
+
+    assert alone[0].id == after_other[1].id
+    assert len({t.id for t in twice}) == 2
+
+
+def test_parser_test_fails_when_sniff_does_not_claim_the_sample(data_home: Path) -> None:
+    """A parser that parses rows but scores 0 would never be chosen by ingest."""
+    service.parser_scaffold("demo_card", "card", "demo", root=data_home)
+    sample = data_home / "fixtures" / "sample.txt"
+    sample.write_text("2026-06-02  ACME STORE  -12.34\n", encoding="utf-8")
+
+    result = service.parser_test("demo_card", sample, root=data_home)
+
+    assert result["ok"] is False
+    assert result["transaction_count"] == 1
+    assert "sniff" in (result.get("last_test_error") or "")
+
+
+def test_cli_parsers_preview_prints_extracted_text(
+    data_home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from canhoto.cli import main
+
+    sample = tmp_path / "statement.txt"
+    sample.write_text("ACME BANK\n2026-06-02  ACME STORE  -12.34\n", encoding="utf-8")
+
+    assert main(["parsers", "preview", "--file", str(sample)]) == 0
+    assert capsys.readouterr().out == "ACME BANK\n2026-06-02  ACME STORE  -12.34\n"
+
+
+def test_cli_parsers_preview_reports_truncation_on_stderr(
+    data_home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from canhoto.cli import main
+    from canhoto.core.config import save_config
+
+    cfg = load_config(data_home)
+    save_config(cfg.model_copy(update={"agent_view": cfg.agent_view.model_copy(
+        update={"preview_max_chars": 5})}), data_home)
+    sample = tmp_path / "statement.txt"
+    sample.write_text("0123456789", encoding="utf-8")
+
+    assert main(["parsers", "preview", "--file", str(sample)]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "01234\n"
+    assert "truncated" in captured.err
+    assert "preview_max_chars" in captured.err
+
+
+def test_cli_parsers_preview_missing_file_exits_nonzero(
+    data_home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from canhoto.cli import main
+
+    assert main(["parsers", "preview", "--file", str(tmp_path / "nope.pdf")]) == 1
+    assert '"ok": false' in capsys.readouterr().out

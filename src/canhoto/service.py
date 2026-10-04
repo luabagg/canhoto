@@ -277,7 +277,9 @@ def parser_test(
         institution = result.meta.institution
         if transaction_count <= 0:
             error = "parse returned zero transactions"
-            ok = False
+        elif sniff_score <= 0:
+            # Ingest only picks a parser whose sniff score is above 0.
+            error = "sniff returned 0 for this sample, so ingest would never choose this parser"
         else:
             ok = True
     except (ParserLoadError, ParserNotFoundError, OSError, ValueError, RuntimeError) as exc:

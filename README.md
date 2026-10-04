@@ -63,25 +63,51 @@ memory, reports, and exports.
 
 ## Create a parser
 
-Canhoto does not ship bank-specific parsers. Create one for your statement:
+Canhoto does not ship bank-specific parsers. A parser is one small Python file
+in `~/.canhoto/parsers/`. It reads the text of a statement and returns its rows.
+You do not need this repository to write one.
 
-```bash
-canhoto parsers scaffold --id my_bank_card --type card --institution my_bank
-```
+1. Create the parser file:
 
-Edit `~/.canhoto/parsers/my_bank_card.py`, then test and enable it:
+   ```bash
+   canhoto parsers scaffold --id my_bank_card --type card --institution my_bank
+   ```
 
-```bash
-canhoto parsers test --id my_bank_card --file ~/statements/sample.pdf
-canhoto parsers enable --id my_bank_card
-```
+2. See the text the parser receives. This is the extracted text, not the PDF
+   layout:
 
-You can enable a parser only after a test extracts at least one transaction.
-A failed test disables the parser until it passes again. See
-[`examples/parsers/`](examples/parsers/) for a small example.
+   ```bash
+   canhoto parsers preview --file ~/statements/sample.pdf > sample.txt
+   ```
+
+3. Edit `~/.canhoto/parsers/my_bank_card.py`. The file already reads rows such
+   as `2026-06-02  ACME STORE  -12.34`, and its comments list the rules.
+   Change three things:
+   - `sniff()`: return a score above 0 only for text unique to this statement.
+   - `_ROW` and `parse()`: match the row format you saw in step 2.
+   - `_CURRENCY`: your ISO 4217 currency code.
+
+4. Test the parser, then enable it:
+
+   ```bash
+   canhoto parsers test --id my_bank_card --file ~/statements/sample.pdf
+   canhoto parsers enable --id my_bank_card
+   ```
+
+The test passes only when `parse()` returns at least one transaction and
+`sniff()` claims the sample. A failed test disables the parser until it passes
+again.
+
+Keep transaction ids stable: build them from the bank's operation id, or from
+the date, amount, and description. Never use the row position, because then
+two statements can overwrite each other's rows. Leave `category` and `kind`
+empty. Your rules and review set them.
 
 For password-protected PDFs, pass `--pdf-password` or set
-`CANHOTO_PDF_PASSWORD`.
+`CANHOTO_PDF_PASSWORD`. For a complete example, see
+[`examples/parsers/`](https://github.com/luabagg/canhoto/tree/main/examples/parsers).
+An agent connected to `canhoto-mcp` can also write the parser for you. See
+the MCP section below.
 
 ## Process a month
 
@@ -200,7 +226,7 @@ mcp_servers:
 
 ```text
 canhoto init | doctor
-canhoto parsers scaffold|test|enable|list
+canhoto parsers scaffold|preview|test|enable|list
 canhoto ingest <files...> [--pdf-password PASSWORD]
 canhoto categorize rules --month YYYY-MM
 canhoto categorize apply --file patches.json
@@ -220,12 +246,12 @@ uv run ruff check src/canhoto tests
 uv run mypy -p canhoto
 ```
 
-Or use the [`justfile`](justfile) with [Just](https://just.systems/).
+Or use the [`justfile`](https://github.com/luabagg/canhoto/blob/main/justfile) with [Just](https://just.systems/).
 
 ### Release
 
 Pushing a version tag publishes to PyPI through
-[`.github/workflows/release.yml`](.github/workflows/release.yml). The workflow
+[`.github/workflows/release.yml`](https://github.com/luabagg/canhoto/blob/main/.github/workflows/release.yml). The workflow
 tests, builds, smoke-tests the wheel and the source distribution, and publishes
 with PyPI Trusted Publishing. The tag must match the version in
 `pyproject.toml`.
