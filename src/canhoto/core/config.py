@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 from canhoto.core.models import AppConfig, GlobalConfig, normalize_currency_code
+from canhoto.core.money import currency_exponent
 
 _ENV_DATA_DIR = "CANHOTO_DATA_DIR"
 _DEFAULT_DIRNAME = ".canhoto"
@@ -121,6 +122,7 @@ def set_config_value(
 ) -> str:
     _check_key(key)
     currency = normalize_currency_code(value)
+    currency_exponent(currency)
     if global_scope:
         cfg = _read_global_config().model_copy(update={"currency": currency})
         _write_config(global_config_path(), cfg.model_dump_json(indent=2, exclude_none=True) + "\n")

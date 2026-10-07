@@ -52,7 +52,7 @@ def _tx(
         id=tx_id,
         date=date(2026, 6, 10),
         amount_minor=amount_minor,
-        currency="XXX",
+        currency="BRL",
         description=description,
         merchant_raw=description,
         source_kind=source_kind,
@@ -141,6 +141,7 @@ def _rule(**overrides: object) -> UserRule:
         "direction": "in",
         "category": "Income",
         "kind": "income",
+        "currency": "BRL",
     }
     values.update(overrides)
     return UserRule.model_validate(values)

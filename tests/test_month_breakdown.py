@@ -158,11 +158,12 @@ def test_month_breakdown_aggregates_only(data_home: Path) -> None:
 
     bd = MonthBreakdown.model_validate(result["breakdown"])
     assert bd.month == "2026-06"
-    assert bd.income == "1000.00"
+    brl = bd.by_currency["BRL"]
+    assert brl.income == "1000.00"
     # 50.00 + 200.50 + 10.00 (pending uncategorized) = 260.50
-    assert bd.expenses == "260.50"
-    assert bd.net == "739.50"
-    assert bd.by_category == {
+    assert brl.expenses == "260.50"
+    assert brl.net == "739.50"
+    assert brl.by_category == {
         "Eating": "50.00",
         "Groceries": "200.50",
         "uncategorized": "10.00",
@@ -204,10 +205,11 @@ def test_month_breakdown_card_spend_counts_even_if_kind_empty(data_home: Path) -
     )
     result = service.month_breakdown("2026-06")
     bd = MonthBreakdown.model_validate(result["breakdown"])
-    assert bd.expenses == "12.34"
-    assert bd.income == "50.00"
-    assert bd.net == "37.66"
-    assert bd.by_category == {"Shopping": "12.34"}
+    brl = bd.by_currency["BRL"]
+    assert brl.expenses == "12.34"
+    assert brl.income == "50.00"
+    assert brl.net == "37.66"
+    assert brl.by_category == {"Shopping": "12.34"}
     assert bd.expense_count == 1
     assert bd.transaction_count == 2
 
@@ -253,10 +255,11 @@ def test_cli_breakdown_json(data_home: Path, capsys: pytest.CaptureFixture[str])
     assert "transactions" not in payload["breakdown"]
     bd = payload["breakdown"]
     assert bd["month"] == "2026-06"
-    assert bd["income"] == "500.00"
-    assert bd["expenses"] == "10.00"
-    assert bd["net"] == "490.00"
-    assert bd["by_category"] == {"Eating": "10.00"}
+    brl = bd["by_currency"]["BRL"]
+    assert brl["income"] == "500.00"
+    assert brl["expenses"] == "10.00"
+    assert brl["net"] == "490.00"
+    assert brl["by_category"] == {"Eating": "10.00"}
     assert bd["transaction_count"] == 2
     assert bd["expense_count"] == 1
 

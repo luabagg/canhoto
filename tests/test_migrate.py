@@ -5,8 +5,11 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import pytest
 from alembic import command
 from canhoto.core import migrate
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 
 
 def test_upgrade_creates_versioned_schema(tmp_path: Path) -> None:
@@ -56,6 +59,30 @@ def test_upgrade_adds_user_rules_and_provenance(tmp_path: Path) -> None:
         columns = {r[1] for r in conn.execute("PRAGMA table_info(transactions)")}
     assert "user_rules" in tables
     assert {"classification_source", "user_rule_id"} <= columns
+
+
+def test_failed_currency_migration_rolls_back_and_can_be_retried(tmp_path: Path) -> None:
+    db = tmp_path / "canhoto.db"
+    command.upgrade(migrate.alembic_config(db), "002_user_rules")
+
+    def fail_second_alter(
+        connection: object, cursor: object, statement: str, parameters: object,
+        context: object, executemany: bool,
+    ) -> None:
+        if statement.startswith("ALTER TABLE user_rules ADD COLUMN amount_exponent"):
+            raise OSError("injected migration failure")
+
+    event.listen(Engine, "before_cursor_execute", fail_second_alter)
+    try:
+        with pytest.raises(OSError, match="injected"):
+            migrate.upgrade_to_head(db)
+    finally:
+        event.remove(Engine, "before_cursor_execute", fail_second_alter)
+    assert migrate.current_revision(db) == "002_user_rules"
+    with sqlite3.connect(db) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(transactions)")}
+    assert "amount_exponent" not in columns
+    assert migrate.upgrade_to_head(db) == migrate.HEAD_REVISION
 
 
 def test_upgrade_marks_settled_rows_manual_and_pending_rows_parser(tmp_path: Path) -> None:

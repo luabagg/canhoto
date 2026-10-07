@@ -87,27 +87,38 @@ flowchart TD
 
 ## Currency and country support
 
-Parsers and manual entries can store currency codes other than BRL. Reporting
-still has these limits:
+Manual entries and parser rows support ISO 4217 currencies with defined decimal
+minor units. JPY uses zero decimal places; KWD uses three. Input validation
+rejects rounding, non-finite amounts, and integer overflow.
 
 | Part | Current behavior |
 |---|---|
-| [Parser interface and ledger](src/canhoto/core/models.py) | A parser can set each row's currency. The ledger preserves it. |
+| [Parser interface and ledger](src/canhoto/core/models.py) | Each row stores its currency and decimal exponent. Non-two-decimal parser rows must declare the exponent explicitly. |
 | [Parser row and review defaults](src/canhoto/core/redaction.py) | BRL is the default when a parser omits currency. Review preserves an explicit currency. |
 | [Manual transactions](src/canhoto/core/manual.py) | `--currency` overrides the configured default. Each row stores its currency and includes it in manual output. |
-| [PDF summaries](src/canhoto/exporters/pdf_summary.py) | Every profile uses `R$` and Brazilian number formatting, such as `R$ 1.234,56`. |
+| [Monthly totals](src/canhoto/core/breakdown.py) | Income, expenses, net, and categories are grouped by currency. No total combines currencies. |
+| [PDF summaries](src/canhoto/exporters/pdf_summary.py) | Each currency starts its own page. All profiles use explicit codes, such as `JPY 1,250` and `KWD 12.345`. |
 | [Automatic categorization](src/canhoto/core/categorize.py) | Built-in matches include Portuguese card-payment, savings, and income terms. Self-transfer checks recognize Pix, TED, and DOC. Merchant cleanup also recognizes Brazilian statement text. |
 | [Merchant memory](src/canhoto/core/categorize.py) | Person-ID checks include a CPF-sized digit heuristic. This is not a complete identity detector. |
 
-Two further limits apply beyond BRL:
+A ledger can contain multiple currencies. `breakdown` returns money under
+`breakdown.by_currency`, even when only one currency exists:
 
-- Money calculations assume two decimal places. Currencies with zero or three minor-unit decimals are not supported correctly.
-- Monthly totals do not separate or convert currencies. User-rule amount bounds and merchant memory are not currency-specific either.
+```json
+{
+  "JPY": {"income": "3000", "expenses": "1250", "net": "1750"},
+  "KWD": {"income": "0.000", "expenses": "12.345", "net": "-12.345"}
+}
+```
 
-Use BRL for the full workflow today. Do not mix currencies in one data
-directory. Choosing `EUR` or `USD` for a parser or manual entry preserves that
-code. It does not add conversion or currency-separated totals. PDF output
-still uses BRL formatting.
+These are separate balances, not values to add together. Canhoto does not
+fetch exchange rates or convert currencies. Reports refuse months above the
+50,000-row limit instead of showing partial totals.
+
+Upgrade preserves existing amounts and running balances as hundredths. It
+does not infer a new scale from their currency codes. Legacy fractional JPY
+values remain unchanged and appear without rounding. Backup restore preserves
+these recorded units too.
 
 ## Configuration
 
@@ -138,8 +149,8 @@ do not create files or a ledger. `config unset currency` restores global
 inheritance. Add `--global` to remove the user-wide default instead.
 
 The only supported key is `currency`. Codes need three ASCII letters and
-are normalized to uppercase. Validation checks code format, not ISO registry
-membership. The currency precision limits above still apply.
+are normalized to uppercase. New settings must identify an ISO currency with
+defined decimal minor units. Currency data comes from the `iso4217` package.
 
 Changing config does not change stored transactions. Ledger backups include
 local overrides, but not global preferences. Config management is CLI only.
@@ -181,10 +192,32 @@ The test passes only when `parse()` returns at least one transaction and
 `sniff()` claims the sample. A failed test disables the parser until it passes
 again.
 
-Keep transaction ids stable: build them from the bank's operation id, or from
-the date, amount, and description. Never use the row position, because then
-two statements can overwrite each other's rows. Leave `category` and `kind`
-empty. Your rules and review set them.
+Use the shared money helpers. Do not multiply every amount by 100:
+
+```python
+from datetime import date
+from canhoto.core.models import LedgerTransaction
+from canhoto.core.money import currency_exponent, to_minor
+
+currency = "KWD"
+tx = LedgerTransaction(
+    id="my_bank_card-op0001",
+    date=date(2026, 6, 2),
+    amount_minor=to_minor("-12.345", currency),
+    amount_exponent=currency_exponent(currency),
+    currency=currency,
+    source_kind="card",
+    month="2026-06",
+)
+```
+
+Non-two-decimal parser rows must declare the exponent explicitly. Existing
+non-two-decimal parsers need an update and a new test before use. Retain their
+transaction ids when updating units; otherwise re-ingest can create duplicates.
+
+Keep transaction ids stable. Include account and currency when bank operation
+ids are not unique across feeds. Never use the row position. Leave `category`
+and `kind` empty. Your rules and review set them.
 
 For password-protected PDFs, pass `--pdf-password` or set
 `CANHOTO_PDF_PASSWORD`. For a complete example, see
@@ -227,8 +260,8 @@ Canhoto marks every row you change this way as `manual`. No automatic rule
 changes a manual row again.
 
 The PDF goes to `~/.canhoto/exports/2026-06-summary.pdf` by default. It shows
-totals by category and the top merchants in each category. It never contains a
-transaction list or raw statement descriptions.
+separate currency totals, category totals, and top merchants in each category.
+It never contains a transaction list or raw statement descriptions.
 
 ### Keep manual transactions
 
@@ -252,8 +285,9 @@ only when you ingest the statement again.
 
 Use `--currency EUR` on add to override the configured default. Add, edit,
 and list output include each row's currency. An edit without `--currency`
-keeps the stored code, even after config changes. An explicit currency edit
-corrects the recorded code; it does not convert the amount.
+keeps the stored code, even after config changes. Currency correction preserves
+the numeric major-unit amount without FX conversion. It rejects a correction
+that would need rounding, such as EUR 12.34 to JPY.
 
 ### Teach Canhoto your rules
 
@@ -262,7 +296,7 @@ rules` applies it to every future statement.
 
 ```bash
 canhoto rules add --pattern "PIX RECEBIDO ACME LTDA" --direction in \
-  --min 1200 --max 1300 --category Income --kind income \
+  --min 1200 --max 1300 --currency BRL --category Income --kind income \
   --note "Monthly pay from my company"
 canhoto rules list
 canhoto rules remove --id 3
@@ -272,7 +306,8 @@ canhoto rules remove --id 3
 |---|---|
 | `--pattern` | Regular expression, case-insensitive, matched against the description. |
 | `--direction` | `in` (money received), `out` (money sent), or `any`. |
-| `--min`, `--max` | Amount range, inclusive, without the sign. Both are optional. |
+| `--min`, `--max` | Amount range, inclusive, without the sign. Both use the rule's recorded currency and precision. |
+| `--currency` | Match only this currency. Bounded rules capture the configured currency when omitted. Unbounded rules without currency can match all currencies. |
 | `--source-kind` | Match only `account` or `card` rows. |
 | `--category` | The category to set. |
 | `--kind` | `expense`, `income`, `transfer`, `internal_transfer`, `self_transfer`, or `card_payment`. Transfers do not count as income or spending. |
@@ -283,6 +318,11 @@ canhoto rules remove --id 3
 Your rules run before the built-in rules. They never change manual rows. When
 you upgrade to the version with rules, Canhoto marks your existing reviewed
 rows as manual.
+
+Legacy amount-bounded rules have no recorded currency. `rules list` shows
+`currency: null` for these rules. Remove and recreate them with an explicit
+`--currency` before running rules. Canhoto preserves their amounts and notes;
+it does not guess their denomination.
 
 To remember one merchant without a full rule, use merchant memory:
 
@@ -301,7 +341,7 @@ canhoto export pdf 2026-06 --profile minimal
 ```
 
 - `canhoto`: receipt-style report with a category chart.
-- `modern`: clean report with metric cards and a category chart.
+- `modern`: metric cards and a category chart. Very long amounts use full-width metric rows.
 - `minimal`: text-only report without a chart.
 
 ## Back up and restore

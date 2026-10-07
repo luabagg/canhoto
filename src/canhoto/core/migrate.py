@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 
 from canhoto.core.config import db_path
 
-HEAD_REVISION = "002_user_rules"
+HEAD_REVISION = "003_currency_units"
 
 
 def migrations_dir() -> Path:

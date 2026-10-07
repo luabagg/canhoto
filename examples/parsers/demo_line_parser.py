@@ -21,7 +21,7 @@ Then zero or more transaction lines::
 
 ``amount_major`` is a decimal in major units (e.g. ``-12.34``). Negative
 amounts are debits/expenses in the usual sense; sign is preserved as minor
-units (cents). Blank lines and lines starting with ``#`` are ignored.
+units for the configured currency. Blank lines and lines starting with ``#`` are ignored.
 
 Example::
 
@@ -33,12 +33,11 @@ Example::
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal, InvalidOperation
-
 from canhoto.core.models import LedgerTransaction, ParseResult, StatementMeta
+from canhoto.core.money import currency_exponent, to_minor
 
 _HEADER_PREFIX = "DEMO_STATEMENT"
-_MINOR_SCALE = 100
+_CURRENCY = "BRL"
 
 
 class DemoLineParser:
@@ -101,6 +100,7 @@ class DemoLineParser:
                 statement_type=statement_type,
                 source_file=source_file,
                 institution=institution,
+                currency=_CURRENCY,
             ),
             transactions=transactions,
         )
@@ -147,13 +147,12 @@ def _parse_tx_line(
             f"demo_line_parser: line {lineno}: invalid date {parts[0]!r}"
         ) from exc
     try:
-        amount_major = Decimal(parts[1])
-    except (InvalidOperation, ValueError) as exc:
+        amount_minor = to_minor(parts[1], _CURRENCY)
+    except ValueError as exc:
         raise ValueError(
             f"demo_line_parser: line {lineno}: invalid amount {parts[1]!r}"
         ) from exc
 
-    amount_minor = int(amount_major * _MINOR_SCALE)
     merchant = parts[2].strip() if len(parts) > 2 else ""
     month = tx_date.strftime("%Y-%m")
     tx_id = f"demo_line-{tx_date.isoformat()}-{tx_index:04d}"
@@ -162,7 +161,8 @@ def _parse_tx_line(
         id=tx_id,
         date=tx_date,
         amount_minor=amount_minor,
-        currency="BRL",
+        currency=_CURRENCY,
+        amount_exponent=currency_exponent(_CURRENCY),
         description=merchant,
         merchant_raw=merchant,
         source_kind=statement_type,

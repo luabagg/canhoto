@@ -12,7 +12,7 @@ from datetime import date, datetime
 from typing import Any
 
 from canhoto.core.models import USER_RULE_KINDS, LedgerTransaction, normalize_currency_code
-from canhoto.core.user_rules import amount_bound_to_minor
+from canhoto.core.money import currency_exponent, major_units, to_minor
 
 SOURCE_KIND = "manual"
 
@@ -22,13 +22,11 @@ def parse_date(text: str) -> date:
     return datetime.strptime(text, "%Y-%m-%d").date()
 
 
-def parse_signed_amount(text: str) -> int:
-    """Parse signed major units ("-3080.00" is money out) to minor units."""
-    stripped = text.strip()
-    magnitude = amount_bound_to_minor(stripped.removeprefix("-").removeprefix("+"))
-    if not magnitude:
+def parse_signed_amount(text: str, currency: str = "BRL") -> int:
+    minor = to_minor(text.strip(), currency)
+    if minor == 0:
         raise ValueError(f"amount must not be zero: {text!r}")
-    return -magnitude if stripped.startswith("-") else magnitude
+    return minor
 
 
 def new_transaction(
@@ -56,6 +54,7 @@ def new_transaction(
         date=tx_date,
         amount_minor=amount_minor,
         currency=normalize_currency_code(currency),
+        amount_exponent=currency_exponent(currency),
         description=desc,
         merchant_raw=desc,
         merchant_normalized=merchant,
@@ -84,10 +83,10 @@ def classify_by_hand(tx: LedgerTransaction, category: str) -> LedgerTransaction:
 
 def is_same_entry(a: LedgerTransaction, b: LedgerTransaction) -> bool:
     """Duplicate facts include date, currency, amount, description, and account."""
-    return (a.date, a.currency, a.amount_minor, a.description, a.account_id) == (
+    return (a.date, a.currency, a.amount, a.description, a.account_id) == (
         b.date,
         b.currency,
-        b.amount_minor,
+        b.amount,
         b.description,
         b.account_id,
     )
@@ -106,7 +105,7 @@ def edit_transaction(
     note: str | None,
 ) -> LedgerTransaction:
     """Return ``tx`` with the given facts replaced. ``None`` keeps a field."""
-    update: dict[str, Any] = {}
+    update = _money_update(tx, amount_minor, currency)
     metadata = dict(tx.metadata)
     if tx_date is not None:
         update["date"] = tx_date
@@ -116,8 +115,6 @@ def edit_transaction(
         if kind is None and "manual_kind" not in metadata:
             update["kind"] = _default_kind(amount_minor)
             update["is_expense"] = update["kind"] == "expense"
-    if currency is not None:
-        update["currency"] = normalize_currency_code(currency)
     if description is not None:
         desc = _require_text(description, "description")
         update["description"] = desc
@@ -140,6 +137,23 @@ def edit_transaction(
     if facts_changed and tx.classification_source != "manual":
         return _reset_classification(edited)
     return edited
+
+
+def _money_update(
+    tx: LedgerTransaction, amount_minor: int | None, currency: str | None,
+) -> dict[str, Any]:
+    if amount_minor is None and currency is None:
+        return {}
+    code = normalize_currency_code(currency if currency is not None else tx.currency)
+    update: dict[str, Any] = {
+        "currency": code,
+        "amount_exponent": currency_exponent(code),
+        "amount_minor": amount_minor if amount_minor is not None else to_minor(tx.amount, code),
+    }
+    if tx.running_balance_minor is not None:
+        balance = major_units(tx.running_balance_minor, tx.amount_exponent)
+        update["running_balance_minor"] = to_minor(balance, code)
+    return update
 
 
 def _reset_classification(tx: LedgerTransaction) -> LedgerTransaction:

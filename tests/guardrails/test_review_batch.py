@@ -246,7 +246,7 @@ def test_review_batch_still_hides_parser_income_when_expense_only(data_home: Pat
                 id="inc1",
                 date=date(2026, 6, 3),
                 amount_minor=10000,
-                currency="XXX",
+                currency="BRL",
                 description="PIX RECEBIDO JANE DOE",
                 source_kind="account",
                 category="income",

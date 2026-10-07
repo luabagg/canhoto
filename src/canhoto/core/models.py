@@ -15,6 +15,14 @@ from typing import Annotated, Any, Literal, Protocol
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from canhoto.core.money import (
+    MAX_SQLITE_INTEGER,
+    MIN_SQLITE_INTEGER,
+    currency_exponent,
+    major_units,
+    normalize_currency_code,
+)
+
 # Who set a row's classification. User rules never overwrite "manual".
 ClassificationSource = Literal["parser", "builtin_rule", "user_rule", "merchant_memory", "manual"]
 
@@ -33,14 +41,25 @@ class UserRule(BaseModel):
     id: int | None = None
     pattern: str
     direction: Literal["in", "out", "any"] = "any"
-    min_amount_minor: int | None = Field(default=None, ge=0)
-    max_amount_minor: int | None = Field(default=None, ge=0)
+    currency: str | None = None
+    amount_exponent: int = Field(default=2, ge=0, le=9, strict=True)
+    min_amount_minor: int | None = Field(default=None, ge=0, le=MAX_SQLITE_INTEGER, strict=True)
+    max_amount_minor: int | None = Field(default=None, ge=0, le=MAX_SQLITE_INTEGER, strict=True)
     source_kind: str | None = None
     category: str
     kind: str
     needs_review: bool = False
     note: str = ""
     priority: int = 100
+
+    @model_validator(mode="before")
+    @classmethod
+    def _native_rule_units(cls, value: Any) -> Any:
+        if isinstance(value, dict) and value.get("currency") is not None:
+            value = {**value, "currency": normalize_currency_code(value["currency"])}
+            if "amount_exponent" not in value:
+                value["amount_exponent"] = currency_exponent(value["currency"])
+        return value
 
     @field_validator("pattern")
     @classmethod
@@ -161,13 +180,6 @@ class ParserEntry(BaseModel):
     last_test_error: str | None = None
 
 
-def normalize_currency_code(value: str) -> str:
-    code = value.strip()
-    if re.fullmatch(r"[A-Za-z]{3}", code) is None:
-        raise ValueError("currency must contain three ASCII letters")
-    return code.upper()
-
-
 CurrencyCode = Annotated[str, AfterValidator(normalize_currency_code)]
 
 
@@ -208,10 +220,8 @@ class ReviewItem(BaseModel):
     rule_note: str | None = None
 
 
-class MonthBreakdown(BaseModel):
-    """Aggregate month report. No per-transaction list."""
-
-    month: str
+class CurrencyBreakdown(BaseModel):
+    amount_exponent: int = Field(ge=0, le=9, strict=True)
     income: str
     expenses: str
     net: str
@@ -221,20 +231,26 @@ class MonthBreakdown(BaseModel):
     expense_count: int
 
 
+class MonthBreakdown(BaseModel):
+    """Aggregate month report. Money totals never combine different currencies."""
+
+    month: str
+    by_currency: dict[str, CurrencyBreakdown]
+    pending_review: int
+    transaction_count: int
+    expense_count: int
+
+
 class ReportBundle(BaseModel):
     """In-memory aggregate payload for local summary exporters only."""
 
     breakdown: MonthBreakdown
-    merchant_spend_by_category: dict[str, dict[str, str]] = Field(default_factory=dict)
+    merchant_spend_by_currency: dict[str, dict[str, dict[str, str]]] = Field(default_factory=dict)
     generated_at: str
     title: str
 
 
 # --- Concrete ledger / store DTOs (internal; not agent projections) ---
-
-_DEFAULT_MINOR_EXPONENT = 2
-_MINOR_SCALE = 10**_DEFAULT_MINOR_EXPONENT
-
 
 class LedgerTransaction(BaseModel):
     """Concrete ledger row stored in SQLite.
@@ -244,10 +260,13 @@ class LedgerTransaction(BaseModel):
     Classification fields are free strings (no closed bank/category enums).
     """
 
+    model_config = ConfigDict(revalidate_instances="always")
+
     id: str
     date: date
-    amount_minor: int
+    amount_minor: int = Field(ge=MIN_SQLITE_INTEGER, le=MAX_SQLITE_INTEGER, strict=True)
     currency: str = "BRL"
+    amount_exponent: int = Field(default=2, ge=0, le=9, strict=True)
     description: str = ""
     merchant_raw: str = ""
     merchant_normalized: str | None = None
@@ -255,7 +274,9 @@ class LedgerTransaction(BaseModel):
     institution: str | None = None
     source_file: str | None = None
     operation_id: str | None = None
-    running_balance_minor: int | None = None
+    running_balance_minor: int | None = Field(
+        default=None, ge=MIN_SQLITE_INTEGER, le=MAX_SQLITE_INTEGER, strict=True
+    )
     account_id: str | None = None
     category: str = ""
     kind: str = ""
@@ -270,10 +291,19 @@ class LedgerTransaction(BaseModel):
     billing_cycle: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _native_units(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "amount_exponent" not in value:
+            currency = normalize_currency_code(value.get("currency", "BRL"))
+            if currency_exponent(currency) != 2:
+                raise ValueError(f"currency {currency} requires an explicit amount_exponent")
+            return {**value, "currency": currency, "amount_exponent": 2}
+        return value
+
     @property
     def amount(self) -> Decimal:
-        """Major-unit amount for protocol/redaction compatibility."""
-        return Decimal(self.amount_minor) / Decimal(_MINOR_SCALE)
+        return major_units(self.amount_minor, self.amount_exponent)
 
 
 class StatementMeta(BaseModel):

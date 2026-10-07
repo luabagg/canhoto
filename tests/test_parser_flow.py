@@ -290,9 +290,14 @@ def test_parser_entry_last_test_fields_default_none() -> None:
     assert entry.last_test_error is None
 
 
-def _load_scaffolded(data_home: Path, parser_id: str = "demo_card"):  # type: ignore[no-untyped-def]
+def _load_scaffolded(  # type: ignore[no-untyped-def]
+    data_home: Path, parser_id: str = "demo_card", *, currency: str = "BRL",
+):
     from canhoto.parsers.loader import load_parser_by_id
 
+    path = data_home / "parsers" / f"{parser_id}.py"
+    code = path.read_text().replace('_CURRENCY = "XXX"', f'_CURRENCY = "{currency}"')
+    service.parser_write(parser_id, code, root=data_home)
     return load_parser_by_id(load_config(data_home), parser_id, root=data_home)
 
 
@@ -311,6 +316,19 @@ def test_scaffold_parse_skeleton_reads_example_rows(data_home: Path) -> None:
     assert all(t.category == "" and t.needs_review for t in txs)
 
 
+@pytest.mark.parametrize(("currency", "amount", "minor", "exponent"), [
+    ("JPY", "-1250", -1250, 0), ("KWD", "-12.345", -12345, 3),
+])
+def test_scaffold_uses_native_units(
+    data_home: Path, currency: str, amount: str, minor: int, exponent: int,
+) -> None:
+    service.parser_scaffold("demo_card", "card", "demo", root=data_home)
+    parser = _load_scaffolded(data_home, currency=currency)
+    row = parser.parse(f"2026-06-02  MERCHANT  {amount}\n", "/tmp/s.txt").transactions[0]
+    assert (row.currency, row.amount_minor, row.amount_exponent) == (currency, minor, exponent)
+    assert str(row.amount) == amount
+
+
 def test_scaffold_ids_do_not_depend_on_row_position(data_home: Path) -> None:
     service.parser_scaffold("demo_card", "card", "demo", root=data_home)
     parser = _load_scaffolded(data_home)
@@ -327,6 +345,7 @@ def test_scaffold_ids_do_not_depend_on_row_position(data_home: Path) -> None:
 def test_parser_test_fails_when_sniff_does_not_claim_the_sample(data_home: Path) -> None:
     """A parser that parses rows but scores 0 would never be chosen by ingest."""
     service.parser_scaffold("demo_card", "card", "demo", root=data_home)
+    _load_scaffolded(data_home)
     sample = data_home / "fixtures" / "sample.txt"
     sample.write_text("2026-06-02  ACME STORE  -12.34\n", encoding="utf-8")
 

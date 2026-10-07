@@ -46,15 +46,14 @@ import hashlib
 import re
 from collections import Counter
 from datetime import date
-from decimal import Decimal
-
 from canhoto.core.models import LedgerTransaction, ParseResult, StatementMeta
+from canhoto.core.money import currency_exponent, to_minor
 
 # TODO: set the ISO 4217 code of your statement currency, for example "EUR".
 _CURRENCY = "XXX"
 
 # Example row: "2026-06-02  ACME STORE  -12.34". Change it to match your statement.
-_ROW = re.compile(r"^(\d{{4}})-(\d{{2}})-(\d{{2}})\s+(.+?)\s+(-?\d+\.\d{{2}})$")
+_ROW = re.compile(r"^(\d{{4}})-(\d{{2}})-(\d{{2}})\s+(.+?)\s+(-?\d+(?:\.\d+)?)$")
 
 
 class {class_name}:
@@ -81,8 +80,8 @@ class {class_name}:
                 continue
             year, month, day, description, amount = match.groups()
             tx_date = date(int(year), int(month), int(day))
-            amount_minor = int(Decimal(amount) * 100)
-            key = f"{{tx_date.isoformat()}}|{{amount_minor}}|{{description}}"
+            amount_minor = to_minor(amount, _CURRENCY)
+            key = f"{{tx_date.isoformat()}}|{{_CURRENCY}}|{{amount_minor}}|{{description}}"
             # Identical rows on one statement get 1, 2, ... in reading order.
             seen[key] += 1
             digest = hashlib.sha256(key.encode()).hexdigest()[:12]
@@ -92,6 +91,7 @@ class {class_name}:
                     date=tx_date,
                     amount_minor=amount_minor,
                     currency=_CURRENCY,
+                    amount_exponent=currency_exponent(_CURRENCY),
                     description=description,
                     merchant_raw=description,
                     source_kind=self.statement_type,

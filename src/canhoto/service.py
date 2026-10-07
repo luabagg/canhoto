@@ -11,7 +11,6 @@ import os
 import sqlite3
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
@@ -32,6 +31,7 @@ from canhoto.core.models import (
     StatementRecord,
     UserRule,
 )
+from canhoto.core.money import currency_exponent, format_amount
 from canhoto.core.pdf_text import extract_text
 from canhoto.core.policy import assert_month, clamp_batch_size
 from canhoto.core.redaction import to_review_item
@@ -706,6 +706,7 @@ def rule_add(
     direction: str = "any",
     min_amount: str | None = None,
     max_amount: str | None = None,
+    currency: str | None = None,
     source_kind: str | None = None,
     needs_review: bool = False,
     note: str = "",
@@ -717,6 +718,11 @@ def rule_add(
     Amounts are non-negative major units ("1234.56"); bounds are inclusive.
     Raises ``ValueError`` for an invalid regex, kind, direction, or range.
     """
+    bounded = min_amount is not None or max_amount is not None
+    code = core_config.resolve_currency(root, override=currency) if (
+        bounded or currency is not None
+    ) else None
+    exponent = currency_exponent(code) if code is not None else 2
     try:
         rule = UserRule.model_validate(
             {
@@ -724,8 +730,10 @@ def rule_add(
                 "category": category,
                 "kind": kind,
                 "direction": direction,
-                "min_amount_minor": amount_bound_to_minor(min_amount),
-                "max_amount_minor": amount_bound_to_minor(max_amount),
+                "currency": code,
+                "amount_exponent": exponent,
+                "min_amount_minor": amount_bound_to_minor(min_amount, code or "BRL"),
+                "max_amount_minor": amount_bound_to_minor(max_amount, code or "BRL"),
                 "source_kind": source_kind or None,
                 "needs_review": needs_review,
                 "note": note.strip(),
@@ -891,11 +899,7 @@ def month_breakdown(
 
     db_file = core_config.db_path(data_dir)
     core_store.ensure_schema(db_file)
-    txs = core_store.list_transactions(
-        month=month_value,
-        limit=core_breakdown.DEFAULT_MONTH_LIMIT,
-        path=db_file,
-    )
+    txs = _report_transactions(month_value, db_file)
     breakdown = core_breakdown.compute_month_breakdown(month_value, txs)
     return {
         "ok": True,
@@ -904,6 +908,14 @@ def month_breakdown(
         "data_dir": str(data_dir.resolve()),
         "db_path": str(db_file),
     }
+
+
+def _report_transactions(month: str, db_file: Path) -> list[LedgerTransaction]:
+    limit = core_breakdown.DEFAULT_MONTH_LIMIT
+    rows = core_store.list_transactions(month=month, limit=limit + 1, path=db_file)
+    if len(rows) > limit:
+        raise ValueError(f"month exceeds the {limit}-row report limit; partial totals are refused")
+    return rows
 
 
 # --- Agent preview + PDF export ---
@@ -966,17 +978,13 @@ def export_pdf(
 
     db_file = core_config.db_path(data_dir)
     core_store.ensure_schema(db_file)
-    txs = core_store.list_transactions(
-        month=month_value,
-        limit=core_breakdown.DEFAULT_MONTH_LIMIT,
-        path=db_file,
-    )
+    txs = _report_transactions(month_value, db_file)
     breakdown = core_breakdown.compute_month_breakdown(month_value, txs)
-    merchant_spend_by_category = core_breakdown.compute_merchant_spend_by_category(txs)
+    merchant_spend_by_currency = core_breakdown.compute_merchant_spend_by_currency(txs)
     generated_at = _utc_now_iso()
     bundle = ReportBundle(
         breakdown=breakdown,
-        merchant_spend_by_category=merchant_spend_by_category,
+        merchant_spend_by_currency=merchant_spend_by_currency,
         generated_at=generated_at,
         title=f"Canhoto summary — {month_value}",
     )
@@ -1067,10 +1075,11 @@ def manual_add(
     the row is set by hand; without it, rules classify it or leave it for review.
     Currency defaults: ledger override, global default, then BRL.
     """
+    code = core_config.resolve_currency(root, override=currency)
     tx = core_manual.new_transaction(
         tx_date=core_manual.parse_date(date),
-        amount_minor=core_manual.parse_signed_amount(amount),
-        currency=core_config.resolve_currency(root, override=currency),
+        amount_minor=core_manual.parse_signed_amount(amount, code),
+        currency=code,
         description=description,
         kind=kind,
         merchant=merchant,
@@ -1146,7 +1155,9 @@ def manual_edit(
     edited = core_manual.edit_transaction(
         current,
         tx_date=core_manual.parse_date(date) if date is not None else None,
-        amount_minor=core_manual.parse_signed_amount(amount) if amount is not None else None,
+        amount_minor=core_manual.parse_signed_amount(
+            amount, currency if currency is not None else current.currency
+        ) if amount is not None else None,
         currency=currency,
         description=description,
         kind=kind,
@@ -1190,7 +1201,7 @@ def _manual_view(tx: LedgerTransaction) -> dict[str, Any]:
     return {
         "id": tx.id,
         "date": tx.date.isoformat(),
-        "amount": f"{Decimal(tx.amount_minor).scaleb(-2):.2f}",
+        "amount": format_amount(tx.amount, tx.amount_exponent),
         "currency": tx.currency,
         "description": tx.description,
         "merchant": tx.merchant_normalized,

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
+from decimal import Context, Decimal, InvalidOperation, localcontext
 from pathlib import Path
 
 from fpdf import FPDF
 
 from canhoto.core.models import ReportBundle
+from canhoto.core.money import format_amount
 
 EXPORTER_ID = "pdf_summary"
 PDF_PROFILES = frozenset({"canhoto", "modern", "minimal"})
@@ -58,16 +59,29 @@ class PdfSummaryExporter:
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
         pdf.set_margins(15, 15, 15)
-        self._add_page(pdf)
-
-        self._header(pdf, bd.month, bundle.generated_at)
-        self._metrics(pdf, bd.income, bd.expenses, bd.net)
-        if self.profile != "minimal":
-            self._category_chart(pdf, bd.by_category, bd.expenses)
-        else:
-            self._category_list(pdf, bd.by_category, bd.expenses)
-        self._merchant_summary(pdf, bundle.merchant_spend_by_category)
-        self._footer(pdf)
+        # Stored scales and the monthly row limit need at most 33 significant digits.
+        with localcontext(Context(prec=40)):
+            if not bd.by_currency:
+                self._add_page(pdf)
+                self._header(pdf, bd.month, bundle.generated_at)
+                pdf.set_font("Helvetica", size=10)
+                pdf.cell(180, 6, "No transactions for this month.")
+                self._footer(pdf)
+            for currency, group in sorted(bd.by_currency.items()):
+                exponent = group.amount_exponent
+                self._add_page(pdf)
+                self._header(pdf, f"{bd.month} / {currency}", bundle.generated_at)
+                self._metrics(pdf, group.income, group.expenses, group.net,
+                              currency=currency, exponent=exponent)
+                if self.profile != "minimal":
+                    self._category_chart(pdf, group.by_category, group.expenses,
+                                         currency=currency, exponent=exponent)
+                else:
+                    self._category_list(pdf, group.by_category, group.expenses,
+                                        currency=currency, exponent=exponent)
+                self._merchant_summary(pdf, bundle.merchant_spend_by_currency.get(currency, {}),
+                                       currency=currency, exponent=exponent)
+                self._footer(pdf)
 
         pdf.output(str(dest))
         return dest
@@ -136,39 +150,31 @@ class PdfSummaryExporter:
         pdf.line(15, 38, 195, 38)
         pdf.set_y(46)
 
-    def _metrics(self, pdf: FPDF, income: str, expenses: str, net: str) -> None:
-        cards = (
-            ("INCOME", income, False),
-            ("EXPENSES", expenses, False),
-            ("NET", net, True),
-        )
-
-        if self.profile == "canhoto":
-            pdf.set_font("Courier", "B", 8)
-            pdf.set_text_color(*_INK)
-            for label, value, show_sign in cards:
-                pdf.cell(50, 5, label)
-                pdf.cell(55, 5, _brl(value, show_sign=show_sign), align="R")
-                pdf.cell(75, 5, "." * 35, align="R", new_x="LMARGIN", new_y="NEXT")
-            pdf.ln(5)
-            return
-
-        if self.profile == "minimal":
-            pdf.set_font("Helvetica", size=10)
-            pdf.set_text_color(*_MIN_INK)
-            for label, value, show_sign in cards:
+    def _metrics(
+        self, pdf: FPDF, income: str, expenses: str, net: str, *, currency: str, exponent: int,
+    ) -> None:
+        cards = [
+            (label, _money(value, currency, exponent, show_sign=show_sign))
+            for label, value, show_sign in (
+                ("INCOME", income, False), ("EXPENSES", expenses, False), ("NET", net, True)
+            )
+        ]
+        pdf.set_font("Helvetica", "B", 13)
+        fits_boxes = all(pdf.get_string_width(value) <= 47 for _, value in cards)
+        if self.profile != "modern" or not fits_boxes:
+            font = "Courier" if self.profile == "canhoto" else "Helvetica"
+            ink = _INK if self.profile == "canhoto" else _MIN_INK
+            pdf.set_font(font, size=10)
+            pdf.set_text_color(*ink)
+            for label, value in cards:
                 pdf.cell(40, 6, label)
-                pdf.cell(
-                    140, 6, _brl(value, show_sign=show_sign), align="R",
-                    new_x="LMARGIN", new_y="NEXT",
-                )
+                pdf.cell(140, 6, value, align="R", new_x="LMARGIN", new_y="NEXT")
             pdf.ln(4)
             return
 
-        # modern: bordered metric boxes with blue stripe accent
         y = pdf.get_y()
         x = 15
-        for label, value, show_sign in cards:
+        for label, value in cards:
             pdf.set_draw_color(*_MODERN_BLUE)
             pdf.set_line_width(0.2)
             pdf.rect(x, y, 57, 24, style="D")
@@ -181,12 +187,14 @@ class PdfSummaryExporter:
             pdf.set_text_color(*_MODERN_INK)
             pdf.set_font("Helvetica", "B", 13)
             pdf.set_xy(x + 4, y + 12)
-            pdf.cell(49, 7, _brl(value, show_sign=show_sign))
+            pdf.cell(49, 7, value)
             x += 61
         pdf.set_text_color(0, 0, 0)
         pdf.set_y(y + 30)
 
-    def _category_chart(self, pdf: FPDF, categories: dict[str, str], expenses: str) -> None:
+    def _category_chart(
+        self, pdf: FPDF, categories: dict[str, str], expenses: str, *, currency: str, exponent: int,
+    ) -> None:
         if self.profile == "canhoto":
             ink, muted, font = _INK, _FADED_INK, "Courier"
             hole_color = _PAPER
@@ -242,7 +250,10 @@ class PdfSummaryExporter:
         pdf.cell(28, 4, "TOTAL", align="C")
         pdf.set_font(font, "B", 9)
         pdf.set_xy(center_x - 14, center_y + 1)
-        pdf.cell(28, 5, _brl(expenses), align="C")
+        total_label = _money(expenses, currency, exponent)
+        if pdf.get_string_width(total_label) > 26:
+            total_label = currency
+        pdf.cell(28, 5, total_label, align="C")
 
         y = center_y - 20
         for name, amount, color in chart_rows:
@@ -256,7 +267,10 @@ class PdfSummaryExporter:
             pdf.set_font(font, size=8)
             pdf.set_xy(153, y)
             share = amount / total * 100 if total > 0 else Decimal(0)
-            pdf.cell(42, 5, f"{share:.0f}%  {_brl(amount)}", align="R")
+            value_label = f"{share:.0f}%  {_money(amount, currency, exponent)}"
+            if pdf.get_string_width(value_label) > 40:
+                value_label = f"{share:.0f}%"
+            pdf.cell(42, 5, value_label, align="R")
             y += 7
         pdf.set_text_color(0, 0, 0)
         content_bottom = max(center_y + 35, y + 5)
@@ -264,33 +278,48 @@ class PdfSummaryExporter:
             content_bottom = max(content_bottom, chart_box_bottom + 5)
         pdf.set_y(content_bottom)
 
-    def _category_list(self, pdf: FPDF, categories: dict[str, str], expenses: str) -> None:
+    def _category_list(
+        self, pdf: FPDF, categories: dict[str, str], expenses: str, *, currency: str, exponent: int,
+    ) -> None:
         """Minimal profile: text-only category breakdown, no chart."""
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.set_text_color(*_MIN_INK)
-        pdf.cell(0, 7, "By category", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_font("Helvetica", size=9)
+        self._category_heading(pdf, currency)
         total = _amount(expenses)
         for name, value in sorted(categories.items(), key=lambda i: _amount(i[1]), reverse=True):
+            if self._ensure_page_space(pdf, 5):
+                self._category_heading(pdf, currency, continuation=True)
             amt = _amount(value)
             share = amt / total * 100 if total > 0 else Decimal(0)
             pdf.set_text_color(*_MIN_INK)
-            pdf.cell(90, 5, _safe(name))
+            label = _safe(_truncate(name, 30))
+            while pdf.get_string_width(label) > 58:
+                label = label[:-4] + "..."
+            pdf.cell(60, 5, label)
             pdf.set_text_color(*_MIN_MUTED)
-            pdf.cell(30, 5, f"{share:.0f}%")
+            pdf.cell(20, 5, f"{share:.0f}%")
             pdf.set_text_color(*_MIN_INK)
-            pdf.cell(60, 5, _brl(amt), align="R", new_x="LMARGIN", new_y="NEXT")
+            value_label = _money(amt, currency, exponent)
+            pdf.cell(100, 5, value_label, align="R", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(4)
 
+    def _category_heading(
+        self, pdf: FPDF, currency: str, *, continuation: bool = False,
+    ) -> None:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(*_MIN_INK)
+        label = "By category" + (" (continued)" if continuation else "")
+        pdf.cell(180, 7, f"{label} / {currency}", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", size=9)
+
     def _merchant_summary(
-        self, pdf: FPDF, merchant_spend_by_category: dict[str, dict[str, str]]
+        self, pdf: FPDF, merchant_spend_by_category: dict[str, dict[str, str]],
+        *, currency: str, exponent: int,
     ) -> None:
         """Render top normalized merchants per category, never ledger rows."""
         if not merchant_spend_by_category:
             return
 
-        self._ensure_receipt_space(pdf, 12)
-        self._receipt_heading(pdf)
+        self._ensure_receipt_space(pdf, 12, currency=currency)
+        self._receipt_heading(pdf, currency=currency)
         row_height = 5
         categories = sorted(
             (
@@ -301,37 +330,44 @@ class PdfSummaryExporter:
             reverse=True,
         )
         for category, merchants, total in categories:
-            self._ensure_receipt_space(pdf, row_height * 2)
+            self._ensure_receipt_space(pdf, row_height * 2, currency=currency)
             pdf.set_font("Courier" if self.profile != "minimal" else "Helvetica", "B", 8)
             pdf.cell(
                 180,
                 row_height,
-                _dotted_row(_safe(_truncate(category.upper(), 30)), total, width=45),
+                _dotted_row(_safe(_truncate(category.upper(), 30)), total,
+                            currency=currency, exponent=exponent, width=85),
                 new_x="LMARGIN",
                 new_y="NEXT",
             )
             for merchant, amount in _top_merchants(merchants):
-                self._ensure_receipt_space(pdf, row_height)
+                self._ensure_receipt_space(pdf, row_height, currency=currency)
                 # Set per row: a continuation page heading changes the font.
                 pdf.set_font("Courier" if self.profile != "minimal" else "Helvetica", size=8)
                 pdf.cell(
                     180,
                     row_height,
-                    "  " + _dotted_row(_safe(_truncate(merchant, 30)), amount, width=43),
+                    "  " + _dotted_row(_safe(_truncate(merchant, 30)), amount,
+                                       currency=currency, exponent=exponent, width=83),
                     new_x="LMARGIN",
                     new_y="NEXT",
                 )
             pdf.ln(1)
 
-    def _ensure_receipt_space(self, pdf: FPDF, height: float) -> None:
-        """Reserve footer space and start a fully styled continuation page."""
+    def _ensure_receipt_space(self, pdf: FPDF, height: float, *, currency: str) -> None:
+        if self._ensure_page_space(pdf, height):
+            self._receipt_heading(pdf, currency=currency, continuation=True)
+
+    def _ensure_page_space(self, pdf: FPDF, height: float) -> bool:
         if pdf.get_y() + height <= pdf.h - 23:
-            return
+            return False
         self._footer(pdf)
         self._add_page(pdf)
-        self._receipt_heading(pdf, continuation=True)
+        return True
 
-    def _receipt_heading(self, pdf: FPDF, *, continuation: bool = False) -> None:
+    def _receipt_heading(
+        self, pdf: FPDF, *, currency: str, continuation: bool = False,
+    ) -> None:
         title = "MERCHANT SUMMARY" + (" (CONT.)" if continuation else "")
         if self.profile == "canhoto":
             pdf.set_draw_color(*_FADED_INK)
@@ -353,7 +389,7 @@ class PdfSummaryExporter:
             pdf.ln(3)
             pdf.set_text_color(*_MODERN_INK)
             pdf.set_font("Courier", "B", 9)
-        pdf.cell(180, 6, title, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(180, 6, f"{title} / {currency}", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("Courier" if self.profile != "minimal" else "Helvetica", size=9)
 
     def _footer(self, pdf: FPDF) -> None:
@@ -403,26 +439,32 @@ def _top_merchants(merchants: dict[str, str]) -> list[tuple[str, Decimal]]:
     return [*rows[:3], ("Other merchants", other)]
 
 
-def _dotted_row(label: str, amount: Decimal, *, width: int) -> str:
-    """Join label and amount with dot leaders so rows of one width align."""
-    formatted = _brl(amount)
+def _dotted_row(
+    label: str, amount: Decimal, *, currency: str, exponent: int, width: int,
+) -> str:
+    formatted = _money(amount, currency, exponent)
     dots = "." * max(3, width - 2 - len(label) - len(formatted))
     return f"{label} {dots} {formatted}"
 
 
 def _amount(value: str | Decimal) -> Decimal:
     try:
-        return abs(Decimal(value))
-    except (InvalidOperation, ValueError):
-        return Decimal(0)
+        amount = Decimal(value)
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError("PDF amount must be a finite number") from exc
+    if not amount.is_finite():
+        raise ValueError("PDF amount must be a finite number")
+    return amount.copy_abs()
 
 
-def _brl(value: str | Decimal, *, show_sign: bool = False) -> str:
+def _money(
+    value: str | Decimal, currency: str, exponent: int, *, show_sign: bool = False,
+) -> str:
     raw = Decimal(value)
-    amount = abs(raw)
-    whole, fractional = f"{amount:.2f}".split(".")
+    amount = _amount(raw)
+    format_amount(amount, exponent)
     sign = "-" if show_sign and raw < 0 else ""
-    return f"{sign}R$ {int(whole):,}".replace(",", ".") + f",{fractional}"
+    return f"{sign}{currency} {amount:,.{exponent}f}"
 
 
 def _truncate(value: str, length: int) -> str:

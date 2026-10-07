@@ -26,7 +26,7 @@ from canhoto.core.models import (
     LedgerTransaction,
     UserRule,
 )
-from canhoto.core.user_rules import match_user_rule
+from canhoto.core.user_rules import match_user_rule, validate_rule_currencies
 
 # Month listing ceiling for a single rules pass (household-scale statements).
 _DEFAULT_MONTH_LIMIT = 50_000
@@ -213,6 +213,7 @@ def run_rules_for_month(
     """
     _validate_month(month)
     user_rules = core_store.list_user_rules(path=path)
+    validate_rule_currencies(user_rules)
     txs = core_store.list_transactions(month=month, limit=limit, path=path)
     patches: list[ClassificationPatch] = []
     user_rule_applied = 0

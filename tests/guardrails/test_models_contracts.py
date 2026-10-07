@@ -5,6 +5,7 @@ from __future__ import annotations
 from canhoto.core.models import (
     AgentViewConfig,
     AppConfig,
+    CurrencyBreakdown,
     MonthBreakdown,
     ParserEntry,
     ReviewItem,
@@ -119,13 +120,16 @@ def test_review_item_required_shape_and_currency_override() -> None:
 def test_month_breakdown_required_shape() -> None:
     breakdown = MonthBreakdown(
         month="2026-07",
-        income="1000.00",
-        expenses="250.50",
-        net="749.50",
-        by_category={"Eating": "50.00", "Groceries": "200.50"},
+        by_currency={"BRL": CurrencyBreakdown(
+            amount_exponent=2, income="1000.00", expenses="250.50", net="749.50",
+            by_category={"Eating": "50.00", "Groceries": "200.50"},
+            pending_review=3, transaction_count=12, expense_count=8,
+        )},
         pending_review=3,
         transaction_count=12,
         expense_count=8,
     )
-    assert breakdown.by_category["Eating"] == "50.00"
+    assert breakdown.by_currency["BRL"].by_category["Eating"] == "50.00"
+    assert not {"income", "expenses", "net", "by_category"} & MonthBreakdown.model_fields.keys()
+    assert FORBIDDEN_BREAKDOWN_FIELDS.isdisjoint(CurrencyBreakdown.model_fields)
     assert "transactions" not in MonthBreakdown.model_fields

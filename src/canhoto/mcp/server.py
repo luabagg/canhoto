@@ -23,6 +23,7 @@ _INSTRUCTIONS = (
     "3. rule_list (read the notes) → run_rules → review_batch loop → set_categories\n"
     "   (and set_merchant_category as needed).\n"
     "   When the user explains a recurring counterparty, store it with rule_add and a note.\n"
+    "   Specify currency for amount bounds. Never compare bounds across currencies.\n"
     "   Use needs_review=true when an amount range cannot separate the cases.\n"
     "   To confirm a flagged row, send set_categories with needs_review=false"
     " and review_reason=null.\n"
@@ -145,6 +146,7 @@ def _register_tools(server: MCPServer[Any]) -> None:
         direction: str = "any",
         min_amount: str | None = None,
         max_amount: str | None = None,
+        currency: str | None = None,
         source_kind: str | None = None,
         needs_review: bool = False,
         note: str = "",
@@ -153,7 +155,8 @@ def _register_tools(server: MCPServer[Any]) -> None:
         """Store a rule the user stated. Always include a note that says why."""
         return service.rule_add(
             pattern, category, kind, direction=direction, min_amount=min_amount,
-            max_amount=max_amount, source_kind=source_kind, needs_review=needs_review,
+            max_amount=max_amount, currency=currency, source_kind=source_kind,
+            needs_review=needs_review,
             note=note, priority=priority,
         )
 

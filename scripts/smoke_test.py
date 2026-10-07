@@ -48,15 +48,30 @@ def main() -> None:
             "manual", "add", "--date", "2026-09-05", "--amount", "-12.50",
             "--description", "Example purchase", "--category", "Food",
         )
+        for currency, amount in [("KWD", "-12.345"), ("JPY", "-1250")]:
+            _run_cli(
+                "manual", "add", "--date", "2026-09-05", "--amount", amount,
+                "--currency", currency, "--description", "Example foreign purchase",
+                "--category", "Food",
+            )
         backup_file = root / "home.canhoto"
         _run_cli("backup", "--output", str(backup_file))
         os.environ["CANHOTO_DATA_DIR"] = str(root / "target")
         _run_cli("restore", str(backup_file))
         rows = _run_cli("manual", "list")
-        assert rows["count"] == 1
+        assert rows["count"] == 3
         transactions = rows["transactions"]
         assert isinstance(transactions, list)
-        assert transactions[0]["currency"] == "USD"
+        assert {row["currency"]: row["amount"] for row in transactions} == {
+            "USD": "-12.50", "KWD": "-12.345", "JPY": "-1250",
+        }
+        report = _run_cli("breakdown", "--month", "2026-09")["breakdown"]
+        assert isinstance(report, dict)
+        groups = report["by_currency"]
+        assert groups["KWD"]["expenses"] == "12.345"
+        assert groups["JPY"]["expenses"] == "1250"
+        pdf = _run_cli("export", "pdf", "2026-09")
+        assert Path(str(pdf["path"])).is_file()
         assert _run_cli("config", "get", "currency")["value"] == "USD"
         doctor = _run_cli("doctor")
         assert doctor["db_revision"] == migrate.HEAD_REVISION, doctor

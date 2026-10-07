@@ -54,10 +54,12 @@ def ensure_schema(path: Path | None = None) -> None:
 
 
 def _tx_to_params(tx: LedgerTransaction) -> dict[str, object]:
+    tx = LedgerTransaction.model_validate(tx)
     return {
         "id": tx.id,
         "date": tx.date.isoformat(),
         "amount_minor": tx.amount_minor,
+        "amount_exponent": tx.amount_exponent,
         "currency": tx.currency,
         "description": tx.description,
         "merchant_raw": tx.merchant_raw,
@@ -89,7 +91,8 @@ def _row_to_tx(row: sqlite3.Row) -> LedgerTransaction:
     return LedgerTransaction(
         id=row["id"],
         date=date.fromisoformat(row["date"]),
-        amount_minor=int(row["amount_minor"]),
+        amount_minor=row["amount_minor"],
+        amount_exponent=row["amount_exponent"],
         currency=row["currency"],
         description=row["description"] or "",
         merchant_raw=row["merchant_raw"] or "",
@@ -98,11 +101,7 @@ def _row_to_tx(row: sqlite3.Row) -> LedgerTransaction:
         institution=row["institution"],
         source_file=row["source_file"],
         operation_id=row["operation_id"],
-        running_balance_minor=(
-            int(row["running_balance_minor"])
-            if row["running_balance_minor"] is not None
-            else None
-        ),
+        running_balance_minor=row["running_balance_minor"],
         account_id=row["account_id"],
         category=row["category"] or "",
         kind=row["kind"] or "",
@@ -154,14 +153,14 @@ def _upsert_transactions(
             conn.execute(
                 """
                 INSERT INTO transactions (
-                  id, date, amount_minor, currency, description,
+                  id, date, amount_minor, amount_exponent, currency, description,
                   merchant_raw, merchant_normalized, source_kind, institution,
                   source_file, operation_id, running_balance_minor, account_id,
                   category, kind, is_expense, needs_review, confidence,
                   review_reason, installment, month, billing_cycle, metadata,
                   classification_source, user_rule_id
                 ) VALUES (
-                  :id, :date, :amount_minor, :currency, :description,
+                  :id, :date, :amount_minor, :amount_exponent, :currency, :description,
                   :merchant_raw, :merchant_normalized, :source_kind, :institution,
                   :source_file, :operation_id, :running_balance_minor, :account_id,
                   :category, :kind, :is_expense, :needs_review, :confidence,
@@ -182,6 +181,7 @@ def _upsert_transactions(
                 UPDATE transactions SET
                   date = :date,
                   amount_minor = :amount_minor,
+                  amount_exponent = :amount_exponent,
                   currency = :currency,
                   description = :description,
                   merchant_raw = :merchant_raw,
@@ -206,6 +206,7 @@ def _upsert_transactions(
                 UPDATE transactions SET
                   date = :date,
                   amount_minor = :amount_minor,
+                  amount_exponent = :amount_exponent,
                   currency = :currency,
                   description = :description,
                   merchant_raw = :merchant_raw,
@@ -544,8 +545,8 @@ def set_merchant_category(
 
 
 _USER_RULE_COLUMNS = (
-    "pattern, direction, min_amount_minor, max_amount_minor, source_kind,"
-    " category, kind, needs_review, note, priority"
+    "pattern, direction, min_amount_minor, max_amount_minor, currency, amount_exponent,"
+    " source_kind, category, kind, needs_review, note, priority"
 )
 
 
@@ -553,12 +554,14 @@ def add_user_rule(rule: UserRule, *, path: Path | None = None) -> UserRule:
     with connect(path) as conn:
         cursor = conn.execute(
             f"INSERT INTO user_rules ({_USER_RULE_COLUMNS})"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 rule.pattern,
                 rule.direction,
                 rule.min_amount_minor,
                 rule.max_amount_minor,
+                rule.currency,
+                rule.amount_exponent,
                 rule.source_kind,
                 rule.category,
                 rule.kind,

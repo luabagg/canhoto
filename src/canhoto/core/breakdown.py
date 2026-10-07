@@ -1,136 +1,109 @@
-"""Month aggregate reports (no per-transaction lists).
-
-Portable accounting intent (architecture §9):
-- Card spend / ``is_expense`` rows count toward expenses.
-- ``card_payment``, ``self_transfer``, and ``internal_transfer`` are excluded
-  from spend (and are not income).
-- Income is ``kind == income`` or positive non-expense account-style inflows.
-- Amounts are decimal strings consistent with review redaction formatting.
-"""
+"""Reports contain aggregates only. Integer arithmetic preserves every stored money scale."""
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Iterable
-from decimal import Decimal
 
-from canhoto.core.models import LedgerTransaction, MonthBreakdown
+from canhoto.core.models import CurrencyBreakdown, LedgerTransaction, MonthBreakdown
+from canhoto.core.money import format_amount, major_units, normalize_currency_code
 
-# Non-spend structural moves — never roll into expenses or income.
 _EXCLUDED_SPEND_KINDS = frozenset(
-    {
-        "card_payment",
-        "self_transfer",
-        "internal_transfer",
-        "transfer",
-    }
+    {"card_payment", "self_transfer", "internal_transfer", "transfer"}
 )
-
 DEFAULT_MONTH_LIMIT = 50_000
-_CENT = Decimal("0.01")
-_MINOR_SCALE = Decimal(100)
 
 
 def compute_month_breakdown(
-    month: str,
-    transactions: Iterable[LedgerTransaction],
+    month: str, transactions: Iterable[LedgerTransaction],
 ) -> MonthBreakdown:
-    """Aggregate ledger rows for ``month`` into a privacy-safe breakdown.
+    groups = {
+        currency: _currency_breakdown(rows)
+        for currency, rows in sorted(_group_by_currency(transactions).items())
+    }
+    return MonthBreakdown(
+        month=month,
+        by_currency=groups,
+        pending_review=sum(group.pending_review for group in groups.values()),
+        transaction_count=sum(group.transaction_count for group in groups.values()),
+        expense_count=sum(group.expense_count for group in groups.values()),
+    )
 
-    Does not return transaction lists or merchant rollups.
-    """
-    income = Decimal("0")
-    expenses = Decimal("0")
-    by_cat: dict[str, Decimal] = {}
-    pending_review = 0
-    transaction_count = 0
-    expense_count = 0
 
-    for tx in transactions:
-        transaction_count += 1
-        if tx.needs_review:
-            pending_review += 1
-
+def _currency_breakdown(rows: list[LedgerTransaction]) -> CurrencyBreakdown:
+    exponent = max(row.amount_exponent for row in rows)
+    income = expenses = expense_count = 0
+    categories: dict[str, int] = defaultdict(int)
+    for tx in rows:
         kind = (tx.kind or "").strip().lower()
         if kind in _EXCLUDED_SPEND_KINDS:
             continue
-
-        amount = _major_units(tx.amount_minor)
-
+        amount = _aligned_minor(tx, exponent)
         if _is_expense_row(tx, kind):
-            amt = abs(amount)
-            expenses += amt
+            expenses += abs(amount)
             expense_count += 1
-            cat = (tx.category or "").strip() or "uncategorized"
-            by_cat[cat] = by_cat.get(cat, Decimal("0")) + amt
-            continue
-
-        if _is_income_row(tx, kind, amount):
+            categories[(tx.category or "").strip() or "uncategorized"] += abs(amount)
+        elif kind == "income" or amount > 0:
             income += abs(amount)
-
-    net = income - expenses
-    return MonthBreakdown(
-        month=month,
-        income=_format_money(income),
-        expenses=_format_money(expenses),
-        net=_format_money(net),
-        by_category={k: _format_money(by_cat[k]) for k in sorted(by_cat)},
-        pending_review=pending_review,
-        transaction_count=transaction_count,
+    return CurrencyBreakdown(
+        amount_exponent=exponent,
+        income=_format_minor(income, exponent),
+        expenses=_format_minor(expenses, exponent),
+        net=_format_minor(income - expenses, exponent),
+        by_category={
+            name: _format_minor(value, exponent) for name, value in sorted(categories.items())
+        },
+        pending_review=sum(row.needs_review for row in rows),
+        transaction_count=len(rows),
         expense_count=expense_count,
     )
 
 
-def compute_merchant_spend_by_category(
+def compute_merchant_spend_by_currency(
     transactions: Iterable[LedgerTransaction],
-) -> dict[str, dict[str, str]]:
-    """Build exporter-only merchant totals without exposing raw descriptions.
+) -> dict[str, dict[str, dict[str, str]]]:
+    result: dict[str, dict[str, dict[str, str]]] = {}
+    for currency, rows in sorted(_group_by_currency(transactions).items()):
+        exponent = max(row.amount_exponent for row in rows)
+        totals: dict[str, dict[str, int]] = {}
+        for tx in rows:
+            kind = (tx.kind or "").strip().lower()
+            if kind in _EXCLUDED_SPEND_KINDS or not _is_expense_row(tx, kind):
+                continue
+            category = (tx.category or "").strip() or "uncategorized"
+            merchant = (tx.merchant_normalized or "").strip() or "Unidentified merchant"
+            merchants = totals.setdefault(category, {})
+            merchants[merchant] = merchants.get(merchant, 0) + abs(_aligned_minor(tx, exponent))
+        result[currency] = {
+            category: {
+                name: _format_minor(value, exponent) for name, value in sorted(merchants.items())
+            }
+            for category, merchants in sorted(totals.items())
+        }
+    return result
 
-    A merchant name is included only when the parser/categorizer supplied a
-    normalized value. Rows without one are aggregated under a neutral label.
-    """
-    totals: dict[str, dict[str, Decimal]] = {}
+
+def _group_by_currency(
+    transactions: Iterable[LedgerTransaction],
+) -> dict[str, list[LedgerTransaction]]:
+    groups: dict[str, list[LedgerTransaction]] = defaultdict(list)
     for tx in transactions:
-        kind = (tx.kind or "").strip().lower()
-        if kind in _EXCLUDED_SPEND_KINDS or not _is_expense_row(tx, kind):
-            continue
+        groups[normalize_currency_code(tx.currency)].append(tx)
+    return groups
 
-        category = (tx.category or "").strip() or "uncategorized"
-        merchant = (tx.merchant_normalized or "").strip() or "Unidentified merchant"
-        category_totals = totals.setdefault(category, {})
-        category_totals[merchant] = category_totals.get(merchant, Decimal("0")) + abs(
-            _major_units(tx.amount_minor)
-        )
 
-    return {
-        category: {merchant: _format_money(amount) for merchant, amount in merchants.items()}
-        for category, merchants in sorted(totals.items())
-    }
+def _aligned_minor(tx: LedgerTransaction, exponent: int) -> int:
+    return tx.amount_minor * 10 ** (exponent - tx.amount_exponent)
+
+
+def _format_minor(value: int, exponent: int) -> str:
+    return format_amount(major_units(value, exponent), exponent)
 
 
 def _is_expense_row(tx: LedgerTransaction, kind: str) -> bool:
-    if tx.is_expense:
-        return True
-    return kind == "expense"
-
-
-def _is_income_row(tx: LedgerTransaction, kind: str, amount: Decimal) -> bool:
-    if kind == "income":
-        return True
-    # Positive non-expense flows (typical account credits) count as income.
-    return amount > 0 and not tx.is_expense
-
-
-def _major_units(amount_minor: int) -> Decimal:
-    return Decimal(amount_minor) / _MINOR_SCALE
-
-
-def _format_money(value: Decimal) -> str:
-    quantized = value.quantize(_CENT)
-    return format(quantized, "f")
+    return tx.is_expense or kind == "expense"
 
 
 __all__ = [
-    "DEFAULT_MONTH_LIMIT",
-    "compute_merchant_spend_by_category",
-    "compute_month_breakdown",
+    "DEFAULT_MONTH_LIMIT", "compute_merchant_spend_by_currency", "compute_month_breakdown",
 ]

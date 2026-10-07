@@ -71,7 +71,7 @@ def test_add_with_category_counts_in_its_month(root: Path) -> None:
     assert tx.merchant_normalized == "IPVA"
     assert tx.metadata == {"note": "Paid from the cofrinho", "manual_merchant": True}
     breakdown = service.month_breakdown("2026-09", root=root)["breakdown"]
-    assert breakdown["by_category"] == {"Taxes": "3080.00"}
+    assert breakdown["by_currency"]["BRL"]["by_category"] == {"Taxes": "3080.00"}
 
 
 def test_add_without_category_runs_user_rules(root: Path) -> None:
@@ -228,7 +228,8 @@ def test_explicit_kind_is_normalized_and_counts_as_spending(root: Path) -> None:
 
     row = service.manual_list(root=root)["transactions"][0]
     assert (row["kind"], row["is_expense"]) == ("expense", True)
-    assert service.month_breakdown("2026-09", root=root)["breakdown"]["expenses"] == "3080.00"
+    groups = service.month_breakdown("2026-09", root=root)["breakdown"]["by_currency"]
+    assert groups["BRL"]["expenses"] == "3080.00"
 
 
 def test_list_shows_only_manual_rows(root: Path) -> None:
@@ -320,7 +321,8 @@ def test_edit_keeps_explicit_transfer_kind_when_no_rule_matches(root: Path) -> N
     assert row["kind"] == "transfer"
     assert row["is_expense"] is False
     assert row["needs_review"] is True
-    assert service.month_breakdown("2026-09", root=root)["breakdown"]["expenses"] == "0.00"
+    groups = service.month_breakdown("2026-09", root=root)["breakdown"]["by_currency"]
+    assert groups["BRL"]["expenses"] == "0.00"
 
 
 def test_edit_preserves_human_category_and_explicit_merchant(root: Path) -> None:
@@ -361,7 +363,8 @@ def test_implicit_kind_follows_amount_sign_without_changing_human_category(
     assert row["kind"] == kind
     assert row["is_expense"] == (kind == "expense")
     breakdown = service.month_breakdown("2026-09", root=root)["breakdown"]
-    assert (breakdown["income"], breakdown["expenses"]) == (income, expenses)
+    group = breakdown["by_currency"]["BRL"]
+    assert (group["income"], group["expenses"]) == (income, expenses)
 
 
 def test_explicit_kind_and_merchant_from_review_survive_fact_edits(root: Path) -> None:
@@ -407,7 +410,7 @@ def test_remove_deletes_the_row(root: Path) -> None:
     service.manual_remove(tx_id, root=root)
 
     assert get_transaction(tx_id, path=core_config.db_path(root)) is None
-    assert service.month_breakdown("2026-09", root=root)["breakdown"]["expenses"] == "0.00"
+    assert service.month_breakdown("2026-09", root=root)["breakdown"]["by_currency"] == {}
 
 
 @pytest.mark.parametrize("action", ["edit", "remove"])
@@ -435,6 +438,7 @@ def test_cli_crud(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     tx_id = service.manual_list(root=root)["transactions"][0]["id"]
     assert cli_main(["manual", "list", "--month", "2026-09"]) == 0
     assert cli_main(["manual", "edit", "--id", tx_id, "--amount", "-3000"]) == 0
-    assert service.month_breakdown("2026-09", root=root)["breakdown"]["expenses"] == "3000.00"
+    groups = service.month_breakdown("2026-09", root=root)["breakdown"]["by_currency"]
+    assert groups["BRL"]["expenses"] == "3000.00"
     assert cli_main(["manual", "remove", "--id", tx_id]) == 0
     assert service.manual_list(root=root)["transactions"] == []

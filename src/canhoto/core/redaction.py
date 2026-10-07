@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from canhoto.core.models import AgentViewConfig, ReviewItem, Transaction
+from canhoto.core.money import format_amount
 
 
 def merchant_display(tx: Transaction) -> str:
@@ -34,7 +35,9 @@ def to_review_item(
     """
     amount: str | None
     if view.include_amounts_in_review:
-        amount = _format_amount(getattr(tx, "amount", None))
+        amount = _format_amount(
+            getattr(tx, "amount", None), exponent=getattr(tx, "amount_exponent", 2)
+        )
     else:
         amount = None
 
@@ -92,26 +95,10 @@ def _format_date(value: Any) -> str:
     return _as_text(value)
 
 
-def _format_amount(value: Any) -> str | None:
-    if value is None:
+def _format_amount(value: Any, *, exponent: int = 2) -> str | None:
+    if value is None or isinstance(value, bool):
         return None
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, Decimal):
-        quantized = value.quantize(Decimal("0.01"))
-        return format(quantized, "f")
-    if isinstance(value, int):
-        return f"{value:.2f}"
-    if isinstance(value, float):
-        return f"{value:.2f}"
-    if isinstance(value, str):
-        try:
-            quantized = Decimal(value).quantize(Decimal("0.01"))
-        except (InvalidOperation, ValueError):
-            return value
-        return format(quantized, "f")
     try:
-        quantized = Decimal(str(value)).quantize(Decimal("0.01"))
+        return format_amount(Decimal(str(value)), exponent)
     except (InvalidOperation, ValueError):
         return str(value)
-    return format(quantized, "f")

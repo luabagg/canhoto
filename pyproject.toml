@@ -24,6 +24,7 @@ dependencies = [
   "mcp>=1.0",
   "fpdf2>=2.8.7",
   "alembic>=1.19.1",
+  "iso4217>=1.16.20260101",
 ]
 
 [project.optional-dependencies]

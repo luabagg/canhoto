@@ -196,6 +196,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_p.add_argument("--direction", choices=("in", "out", "any"), default="any")
     add_p.add_argument("--min", dest="min_amount", help="Minimum absolute amount, inclusive")
     add_p.add_argument("--max", dest="max_amount", help="Maximum absolute amount, inclusive")
+    add_p.add_argument(
+        "--currency", help="Currency for this rule; bounded rules use config by default"
+    )
     add_p.add_argument("--source-kind", help="Only rows from this source (account, card)")
     add_p.add_argument("--review", action="store_true", help="Classify, but keep for review")
     add_p.add_argument("--note", default="", help="Why this rule exists")
@@ -206,7 +209,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     breakdown_p = sub.add_parser(
         "breakdown",
-        help="Aggregate month report (income/expenses/net/by_category; no tx list)",
+        help="Aggregate month report grouped by currency (no transaction list)",
     )
     breakdown_p.add_argument(
         "--month",
@@ -460,6 +463,7 @@ def _run_rules(args: argparse.Namespace) -> int:
                 direction=args.direction,
                 min_amount=args.min_amount,
                 max_amount=args.max_amount,
+                currency=args.currency,
                 source_kind=args.source_kind,
                 needs_review=args.review,
                 note=args.note,
