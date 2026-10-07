@@ -46,20 +46,103 @@ canhoto doctor
 
 ## How it works
 
+### Parser setup
+
+[Create a parser](#create-a-parser) for each statement format. Reuse it each
+month; test it again when you change its code.
+
 ```mermaid
-flowchart TD
-  A[Statement PDF or text] --> B[Parser]
-  B --> C[Ingest]
-  C --> D[(Local SQLite ledger)]
-  D --> E[Your rules, built-in rules, merchant memory]
-  E --> F[Review uncertain items]
-  F --> G[Apply categories]
-  G --> H[Monthly breakdown]
-  H --> I[Summary PDF]
+flowchart LR
+  Preview["Preview a sample statement"] --> Write["Write the parser"]
+  Write --> Test["Test it on the sample"]
+  Test --> Enable["Enable after a successful test"]
 ```
 
-Parsers only read statement rows. Canhoto handles categories, rules, merchant
-memory, reports, and exports.
+A parser reads statement text and returns transaction rows. `ingest` extracts
+the text and runs an enabled parser. You do not run the parser separately.
+
+### Monthly workflow
+
+```mermaid
+flowchart TD
+  Files["Statement files: PDF or text"] --> Ingest["1. Ingest using an enabled parser"]
+  Ingest --> Ledger[("Local SQLite ledger")]
+  Manual["Optional: add manual rows through the CLI"] --> Ledger
+  Ledger --> Rules["2. Categorize the month"]
+  Rules --> ReviewChoice{"Review pending items?"}
+  ReviewChoice -->|Yes| Review["3. Review a batch"]
+  Review --> Apply["Apply your category decisions"]
+  Apply --> ReviewChoice
+  ReviewChoice -->|"No, or finished"| Reports["4. Choose a monthly summary"]
+  Reports --> Totals["Read totals: breakdown"]
+  Reports --> PDF["Save a PDF: export pdf"]
+```
+
+- Ingest, rules, and category decisions update the same local ledger.
+- Categorization applies your rules, built-in rules, self-transfer checks, then merchant memory.
+- Review returns batches, not the full ledger. Repeat it until you finish your decisions.
+- You can request totals or export a PDF without review. Unreviewed expenses can remain uncategorized.
+- Breakdown and PDF are separate outputs. Use either one, or both.
+- Manual rows join the same reports. They do not require a parser or a statement.
+
+## Currency and country support
+
+Parsers and manual entries can store currency codes other than BRL. Reporting
+still has these limits:
+
+| Part | Current behavior |
+|---|---|
+| [Parser interface and ledger](src/canhoto/core/models.py) | A parser can set each row's currency. The ledger preserves it. |
+| [Parser row and review defaults](src/canhoto/core/redaction.py) | BRL is the default when a parser omits currency. Review preserves an explicit currency. |
+| [Manual transactions](src/canhoto/core/manual.py) | `--currency` overrides the configured default. Each row stores its currency and includes it in manual output. |
+| [PDF summaries](src/canhoto/exporters/pdf_summary.py) | Every profile uses `R$` and Brazilian number formatting, such as `R$ 1.234,56`. |
+| [Automatic categorization](src/canhoto/core/categorize.py) | Built-in matches include Portuguese card-payment, savings, and income terms. Self-transfer checks recognize Pix, TED, and DOC. Merchant cleanup also recognizes Brazilian statement text. |
+| [Merchant memory](src/canhoto/core/categorize.py) | Person-ID checks include a CPF-sized digit heuristic. This is not a complete identity detector. |
+
+Two further limits apply beyond BRL:
+
+- Money calculations assume two decimal places. Currencies with zero or three minor-unit decimals are not supported correctly.
+- Monthly totals do not separate or convert currencies. User-rule amount bounds and merchant memory are not currency-specific either.
+
+Use BRL for the full workflow today. Do not mix currencies in one data
+directory. Choosing `EUR` or `USD` for a parser or manual entry preserves that
+code. It does not add conversion or currency-separated totals. PDF output
+still uses BRL formatting.
+
+## Configuration
+
+Set a user-wide default, or override it for the active ledger:
+
+```bash
+canhoto config set --global currency EUR
+canhoto config set currency USD
+canhoto config get currency
+canhoto config get --global currency
+canhoto config unset currency
+```
+
+- Global settings use `$XDG_CONFIG_HOME/canhoto/config.json`, or `~/.config/canhoto/config.json` when XDG is unset or relative.
+- Ledger settings use the existing `config.json` in the active data directory.
+- Local means the data directory selected by `CANHOTO_DATA_DIR`, not your current working directory.
+
+For a new manual row, currency precedence is:
+
+1. The explicit `--currency` option.
+2. The ledger's currency override.
+3. The global currency default.
+4. BRL when neither config declares a currency.
+
+`config get currency` returns the effective value as JSON. With `--global`,
+it returns only the declared global value, or `null` when none exists. Reads
+do not create files or a ledger. `config unset currency` restores global
+inheritance. Add `--global` to remove the user-wide default instead.
+
+The only supported key is `currency`. Codes need three ASCII letters and
+are normalized to uppercase. Validation checks code format, not ISO registry
+membership. The currency precision limits above still apply.
+
+Changing config does not change stored transactions. Ledger backups include
+local overrides, but not global preferences. Config management is CLI only.
 
 ## Create a parser
 
@@ -154,7 +237,7 @@ straight from a savings reserve. Keep those rows yourself:
 
 ```bash
 canhoto manual add --date 2026-09-17 --amount -3080.00 \
-  --description "Pix enviado Example Tax Office" --category Taxes \
+  --description "Pix enviado Example Tax Office" --category Taxes --currency BRL \
   --merchant IPVA --account cofrinho --note "Car tax, paid from the reserve"
 canhoto manual list [--month 2026-09]
 canhoto manual edit --id manual-... --amount -3100.00 --category Taxes
@@ -163,9 +246,14 @@ canhoto manual remove --id manual-...
 
 A negative amount is money out. With `--category`, the row is set by hand.
 Without it, your rules classify the row, or it waits in `review`. Canhoto
-refuses to add the same date, amount, description, and account twice. An edit
-keeps the id. `edit` and `remove` refuse statement rows: those change only when
-you ingest the statement again.
+refuses to add the same date, currency, amount, description, and account twice.
+An edit keeps the id. `edit` and `remove` refuse statement rows: those change
+only when you ingest the statement again.
+
+Use `--currency EUR` on add to override the configured default. Add, edit,
+and list output include each row's currency. An edit without `--currency`
+keeps the stored code, even after config changes. An explicit currency edit
+corrects the recorded code; it does not convert the amount.
 
 ### Teach Canhoto your rules
 
@@ -285,6 +373,8 @@ mcp_servers:
 
 ```text
 canhoto init | doctor
+canhoto config get|unset [--global] currency
+canhoto config set [--global] currency CODE
 canhoto parsers scaffold|preview|test|enable|list
 canhoto ingest <files...> [--pdf-password PASSWORD]
 canhoto categorize rules --month YYYY-MM
@@ -294,7 +384,7 @@ canhoto rules add|list|remove
 canhoto review --month YYYY-MM [--cursor ID] [--limit N]
 canhoto breakdown --month YYYY-MM
 canhoto export pdf YYYY-MM [--profile canhoto|modern|minimal] [--output PATH]
-canhoto manual add --date YYYY-MM-DD --amount SIGNED --description TEXT [--category CAT]
+canhoto manual add --date YYYY-MM-DD --amount SIGNED --description TEXT [--currency CODE] [--category CAT]
 canhoto manual list [--month YYYY-MM] | edit --id ID [fields] | remove --id ID
 canhoto backup [--output PATH]
 canhoto restore PATH

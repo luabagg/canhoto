@@ -36,6 +36,10 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         os.environ["CANHOTO_DATA_DIR"] = str(root / "source")
+        os.environ["XDG_CONFIG_HOME"] = str(root / "global-config")
+        _run_cli("config", "set", "--global", "currency", "EUR")
+        assert _run_cli("config", "get", "currency")["value"] == "EUR"
+        _run_cli("config", "set", "currency", "USD")
         _run_cli("init")
         assert _run_cli("rules", "list")["rules"] == []
         doctor = _run_cli("doctor")
@@ -48,7 +52,12 @@ def main() -> None:
         _run_cli("backup", "--output", str(backup_file))
         os.environ["CANHOTO_DATA_DIR"] = str(root / "target")
         _run_cli("restore", str(backup_file))
-        assert _run_cli("manual", "list")["count"] == 1
+        rows = _run_cli("manual", "list")
+        assert rows["count"] == 1
+        transactions = rows["transactions"]
+        assert isinstance(transactions, list)
+        assert transactions[0]["currency"] == "USD"
+        assert _run_cli("config", "get", "currency")["value"] == "USD"
         doctor = _run_cli("doctor")
         assert doctor["db_revision"] == migrate.HEAD_REVISION, doctor
     print("smoke test passed")

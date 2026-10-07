@@ -11,7 +11,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
-from canhoto.core.models import USER_RULE_KINDS, LedgerTransaction
+from canhoto.core.models import USER_RULE_KINDS, LedgerTransaction, normalize_currency_code
 from canhoto.core.user_rules import amount_bound_to_minor
 
 SOURCE_KIND = "manual"
@@ -35,6 +35,7 @@ def new_transaction(
     *,
     tx_date: date,
     amount_minor: int,
+    currency: str,
     description: str,
     kind: str | None,
     merchant: str | None,
@@ -54,7 +55,7 @@ def new_transaction(
         id=f"manual-{uuid.uuid4().hex[:12]}",
         date=tx_date,
         amount_minor=amount_minor,
-        currency="BRL",
+        currency=normalize_currency_code(currency),
         description=desc,
         merchant_raw=desc,
         merchant_normalized=merchant,
@@ -82,9 +83,10 @@ def classify_by_hand(tx: LedgerTransaction, category: str) -> LedgerTransaction:
 
 
 def is_same_entry(a: LedgerTransaction, b: LedgerTransaction) -> bool:
-    """Same date, amount, description, and account: a second add is a mistake."""
-    return (a.date, a.amount_minor, a.description, a.account_id) == (
+    """Duplicate facts include date, currency, amount, description, and account."""
+    return (a.date, a.currency, a.amount_minor, a.description, a.account_id) == (
         b.date,
+        b.currency,
         b.amount_minor,
         b.description,
         b.account_id,
@@ -96,6 +98,7 @@ def edit_transaction(
     *,
     tx_date: date | None,
     amount_minor: int | None,
+    currency: str | None,
     description: str | None,
     kind: str | None,
     merchant: str | None,
@@ -113,6 +116,8 @@ def edit_transaction(
         if kind is None and "manual_kind" not in metadata:
             update["kind"] = _default_kind(amount_minor)
             update["is_expense"] = update["kind"] == "expense"
+    if currency is not None:
+        update["currency"] = normalize_currency_code(currency)
     if description is not None:
         desc = _require_text(description, "description")
         update["description"] = desc

@@ -15,7 +15,7 @@ from canhoto.core import backup as core_backup
 from canhoto.core import config as core_config
 from canhoto.core import migrate
 from canhoto.core.models import LedgerTransaction
-from canhoto.core.store import ensure_schema, upsert_transactions
+from canhoto.core.store import ensure_schema, get_transaction, upsert_transactions
 from canhoto.mcp.allowlist import MCP_TOOL_ALLOWLIST, MCP_TOOL_DENYLIST
 
 _PARSER_SOURCE = "def register():\n    return None\n"
@@ -89,6 +89,42 @@ def test_backup_round_trip_restores_ledger_rules_config_and_parsers(tmp_path: Pa
     cfg = core_config.load_config(target)
     assert cfg.own_name_markers == ["ACME OWNER"]
     assert cfg.data_dir == str(target.resolve())
+
+
+def test_backup_restores_local_currency_override_without_changing_global_config(
+    tmp_path: Path,
+) -> None:
+    source, target = tmp_path / "source", tmp_path / "target"
+    _seed(source)
+    core_config.set_config_value("currency", "EUR", root=source)
+    core_config.set_config_value("currency", "USD", global_scope=True)
+    backup_file = tmp_path / "home.canhoto"
+    service.backup(output=backup_file, root=source)
+
+    service.restore(backup_file, root=target)
+
+    assert core_config.resolve_currency(target) == "EUR"
+    assert core_config.get_config_value("currency", global_scope=True) == "USD"
+    restored = get_transaction("t1", path=core_config.db_path(target))
+    assert restored is not None
+    assert restored.currency == "BRL"
+
+
+def test_backup_does_not_freeze_inherited_global_currency(tmp_path: Path) -> None:
+    source, target = tmp_path / "source", tmp_path / "target"
+    _seed(source)
+    core_config.set_config_value("currency", "EUR", global_scope=True)
+    backup_file = tmp_path / "home.canhoto"
+    service.backup(output=backup_file, root=source)
+    core_config.set_config_value("currency", "USD", global_scope=True)
+
+    service.restore(backup_file, root=target)
+
+    assert core_config.load_config(target).currency is None
+    assert core_config.resolve_currency(target) == "USD"
+    restored = get_transaction("t1", path=core_config.db_path(target))
+    assert restored is not None
+    assert restored.currency == "BRL"
 
 
 def test_backup_is_a_zip_with_manifest_and_no_statements(tmp_path: Path) -> None:

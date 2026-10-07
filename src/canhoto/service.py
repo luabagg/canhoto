@@ -44,6 +44,36 @@ from canhoto.parsers.loader import ParserLoadError, ParserNotFoundError
 Source = Literal["cli", "mcp"]
 
 
+def config_get(
+    key: str, *, global_scope: bool = False, root: Path | None = None
+) -> dict[str, Any]:
+    value = core_config.get_config_value(key, global_scope=global_scope, root=root)
+    return {
+        "ok": True, "key": key, "value": value,
+        "scope": "global" if global_scope else "effective",
+    }
+
+
+def config_set(
+    key: str, value: str, *, global_scope: bool = False, root: Path | None = None
+) -> dict[str, Any]:
+    stored = core_config.set_config_value(key, value, global_scope=global_scope, root=root)
+    return {
+        "ok": True, "key": key, "value": stored,
+        "scope": "global" if global_scope else "ledger",
+    }
+
+
+def config_unset(
+    key: str, *, global_scope: bool = False, root: Path | None = None
+) -> dict[str, Any]:
+    removed = core_config.unset_config_value(key, global_scope=global_scope, root=root)
+    return {
+        "ok": True, "key": key, "removed": removed,
+        "scope": "global" if global_scope else "ledger",
+    }
+
+
 def init(root: Path | None = None) -> dict[str, Any]:
     """Create data-dir layout and default config. Does not require parsers."""
     path = core_config.init_data_dir(root)
@@ -1022,6 +1052,7 @@ def manual_add(
     date: str,
     amount: str,
     description: str,
+    currency: str | None = None,
     category: str | None = None,
     kind: str | None = None,
     merchant: str | None = None,
@@ -1034,10 +1065,12 @@ def manual_add(
 
     ``amount`` is signed major units: "-3080.00" is money out. With ``category``
     the row is set by hand; without it, rules classify it or leave it for review.
+    Currency defaults: ledger override, global default, then BRL.
     """
     tx = core_manual.new_transaction(
         tx_date=core_manual.parse_date(date),
         amount_minor=core_manual.parse_signed_amount(amount),
+        currency=core_config.resolve_currency(root, override=currency),
         description=description,
         kind=kind,
         merchant=merchant,
@@ -1082,6 +1115,7 @@ def manual_edit(
     date: str | None = None,
     amount: str | None = None,
     description: str | None = None,
+    currency: str | None = None,
     category: str | None = None,
     kind: str | None = None,
     merchant: str | None = None,
@@ -1089,10 +1123,14 @@ def manual_edit(
     note: str | None = None,
     root: Path | None = None,
 ) -> dict[str, Any]:
-    """Change facts or the category of a manual row. The id stays the same."""
+    """Change a manual row's facts or category without changing its id.
+
+    Omitting currency keeps the stored code. Currency corrections do not convert amounts.
+    """
     facts = {
         "date": date,
         "amount": amount,
+        "currency": currency,
         "description": description,
         "kind": kind,
         "merchant": merchant,
@@ -1109,6 +1147,7 @@ def manual_edit(
         current,
         tx_date=core_manual.parse_date(date) if date is not None else None,
         amount_minor=core_manual.parse_signed_amount(amount) if amount is not None else None,
+        currency=currency,
         description=description,
         kind=kind,
         merchant=merchant,
@@ -1152,6 +1191,7 @@ def _manual_view(tx: LedgerTransaction) -> dict[str, Any]:
         "id": tx.id,
         "date": tx.date.isoformat(),
         "amount": f"{Decimal(tx.amount_minor).scaleb(-2):.2f}",
+        "currency": tx.currency,
         "description": tx.description,
         "merchant": tx.merchant_normalized,
         "account": tx.account_id,

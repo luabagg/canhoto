@@ -39,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
+    _add_config_commands(sub.add_parser("config", help="Get or change currency defaults"))
     sub.add_parser("init", help="Create data-dir layout and default config.json")
     sub.add_parser(
         "doctor",
@@ -271,10 +272,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _add_config_commands(config: argparse.ArgumentParser) -> None:
+    commands = config.add_subparsers(dest="config_cmd", required=True)
+    for action in ("get", "set", "unset"):
+        command = commands.add_parser(action, help=f"{action.capitalize()} a currency setting")
+        command.add_argument("key", help="Supported key: currency")
+        command.add_argument("--global", dest="global_scope", action="store_true",
+                             help="Use user-wide settings instead of the active ledger")
+        if action == "set":
+            command.add_argument("value", help="Three-letter currency code, such as EUR")
+
+
 def _add_manual_fields(p: argparse.ArgumentParser, *, creating: bool) -> None:
     p.add_argument("--date", required=creating, help="YYYY-MM-DD")
     p.add_argument("--amount", required=creating, help='Signed amount: "-3080.00" is money out')
     p.add_argument("--description", required=creating)
+    p.add_argument(
+        "--currency", default=None,
+        help="Currency code; defaults from config on add, keeps the stored code on edit",
+    )
     p.add_argument("--category", help="Set by hand; omit to let rules classify")
     p.add_argument("--kind", help="Default on add: expense for money out, income for money in")
     p.add_argument("--merchant", help="Merchant name for reports")
@@ -288,6 +304,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
 
+    if args.cmd == "config":
+        return _run_service_cmd(lambda: _call_config(args))
     if args.cmd == "init":
         _print_json(service.init())
         return 0
@@ -335,6 +353,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 2
 
 
+def _call_config(args: argparse.Namespace) -> dict[str, Any]:
+    if args.config_cmd == "get":
+        return service.config_get(args.key, global_scope=args.global_scope)
+    if args.config_cmd == "unset":
+        return service.config_unset(args.key, global_scope=args.global_scope)
+    return service.config_set(args.key, args.value, global_scope=args.global_scope)
+
+
 def _call_manual(args: argparse.Namespace) -> dict[str, Any]:
     if args.manual_cmd == "list":
         return service.manual_list(month=args.month)
@@ -343,6 +369,7 @@ def _call_manual(args: argparse.Namespace) -> dict[str, Any]:
     fields = {
         "date": args.date,
         "amount": args.amount,
+        "currency": args.currency,
         "description": args.description,
         "category": args.category,
         "kind": args.kind,

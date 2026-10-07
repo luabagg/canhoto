@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from pathlib import Path
 
@@ -92,6 +93,90 @@ def test_add_without_category_or_matching_rule_waits_for_review(root: Path) -> N
     )
 
     assert service.review_batch("2026-09", root=root)["count"] == 1
+
+
+def test_manual_add_resolves_and_persists_currency(root: Path) -> None:
+    core_config.set_config_value("currency", "EUR", global_scope=True)
+    global_row = service.manual_add(
+        date="2026-09-05", amount="-12.50", description="Global default", category="Food", root=root
+    )["transaction"]
+    core_config.set_config_value("currency", "USD", root=root)
+    local_row = service.manual_add(
+        date="2026-09-05", amount="-12.50", description="Local override", category="Food", root=root
+    )["transaction"]
+    explicit_row = service.manual_add(
+        date="2026-09-05", amount="-12.50", description="Explicit currency", category="Food",
+        currency=" brl ", root=root,
+    )["transaction"]
+
+    currencies = [row["currency"] for row in (global_row, local_row, explicit_row)]
+    assert currencies == ["EUR", "USD", "BRL"]
+    rows = service.manual_list(root=root)["transactions"]
+    assert {row["id"]: row["currency"] for row in rows} == {
+        global_row["id"]: "EUR", local_row["id"]: "USD", explicit_row["id"]: "BRL",
+    }
+    stored = get_transaction(global_row["id"], path=core_config.db_path(root))
+    assert stored is not None
+    assert (stored.currency, stored.amount_minor) == ("EUR", -1250)
+
+
+def test_config_changes_do_not_reinterpret_existing_manual_currency(root: Path) -> None:
+    core_config.set_config_value("currency", "EUR", global_scope=True)
+    tx_id = _add_ipva(root)
+    core_config.set_config_value("currency", "USD", global_scope=True)
+    core_config.set_config_value("currency", "BRL", root=root)
+
+    row = service.manual_edit(tx_id, amount="-3100", root=root)["transaction"]
+
+    assert (row["currency"], row["amount"]) == ("EUR", "-3100.00")
+    stored = get_transaction(tx_id, path=core_config.db_path(root))
+    assert stored is not None
+    assert stored.currency == "EUR"
+
+
+def test_explicit_currency_edit_corrects_code_without_converting_amount(root: Path) -> None:
+    tx_id = _add_ipva(root, currency="EUR")
+
+    row = service.manual_edit(tx_id, currency=" usd ", root=root)["transaction"]
+
+    assert (row["currency"], row["amount"], row["category"]) == ("USD", "-3080.00", "Taxes")
+
+
+def test_manual_duplicates_include_currency(root: Path) -> None:
+    _add_ipva(root, currency="EUR")
+    _add_ipva(root, currency="USD")
+
+    with pytest.raises(ValueError, match="already exists"):
+        _add_ipva(root, currency="eur")
+
+    assert service.manual_list(root=root)["count"] == 2
+
+
+def test_invalid_manual_currency_does_not_create_or_change_a_row(root: Path) -> None:
+    with pytest.raises(ValueError, match="currency"):
+        _add_ipva(root, currency="EURO")
+    assert service.manual_list(root=root)["count"] == 0
+    tx_id = _add_ipva(root, currency="EUR")
+    before = get_transaction(tx_id, path=core_config.db_path(root))
+    with pytest.raises(ValueError, match="currency"):
+        service.manual_edit(tx_id, amount="-999", currency="12A", root=root)
+    assert get_transaction(tx_id, path=core_config.db_path(root)) == before
+
+
+def test_cli_manual_currency_add_edit_and_list(
+    root: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("CANHOTO_DATA_DIR", str(root))
+    assert cli_main([
+        "manual", "add", "--date", "2026-09-05", "--amount", "-10",
+        "--description", "Example purchase", "--category", "Food", "--currency", "eur",
+    ]) == 0
+    original = json.loads(capsys.readouterr().out)["transaction"]
+    assert original["currency"] == "EUR"
+    assert cli_main(["manual", "edit", "--id", original["id"], "--currency", "USD"]) == 0
+    assert json.loads(capsys.readouterr().out)["transaction"]["currency"] == "USD"
+    assert cli_main(["manual", "list"]) == 0
+    assert json.loads(capsys.readouterr().out)["transactions"][0]["currency"] == "USD"
 
 
 def test_positive_amount_is_income(root: Path) -> None:

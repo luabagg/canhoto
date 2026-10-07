@@ -11,9 +11,9 @@ import re
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any, Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Who set a row's classification. User rules never overwrite "manual".
 ClassificationSource = Literal["parser", "builtin_rule", "user_rule", "merchant_memory", "manual"]
@@ -161,9 +161,25 @@ class ParserEntry(BaseModel):
     last_test_error: str | None = None
 
 
-class AppConfig(BaseModel):
-    """Application configuration. No Google/Sheets fields in v1 core."""
+def normalize_currency_code(value: str) -> str:
+    code = value.strip()
+    if re.fullmatch(r"[A-Za-z]{3}", code) is None:
+        raise ValueError("currency must contain three ASCII letters")
+    return code.upper()
 
+
+CurrencyCode = Annotated[str, AfterValidator(normalize_currency_code)]
+
+
+class GlobalConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    currency: CurrencyCode | None = None
+
+
+class AppConfig(BaseModel):
+    """Declared ledger settings. A missing currency override inherits global defaults."""
+
+    currency: CurrencyCode | None = None
     data_dir: str
     parsers_dir: str = "parsers"
     parsers: list[ParserEntry] = Field(default_factory=list)
