@@ -10,6 +10,9 @@ Console entrypoint ``canhoto``. Examples::
     canhoto categorize apply --file patches.json
     canhoto breakdown --month YYYY-MM
     canhoto export pdf YYYY-MM
+    canhoto backup --output home.canhoto
+    canhoto restore home.canhoto
+    canhoto manual add --date YYYY-MM-DD --amount -10.00 --description TEXT
 """
 
 from __future__ import annotations
@@ -233,7 +236,52 @@ def build_parser() -> argparse.ArgumentParser:
         help="Built-in visual profile (default: canhoto)",
     )
 
+    backup_p = sub.add_parser(
+        "backup",
+        help="Write ledger, rules, config, and parsers to one .canhoto file (no statements)",
+    )
+    backup_p.add_argument(
+        "--output",
+        "-o",
+        default=None,
+        help="Backup file path (default: ./canhoto-YYYY-MM-DD.canhoto); never overwritten",
+    )
+    restore_p = sub.add_parser(
+        "restore",
+        help="Restore a trusted .canhoto file into a new or empty data dir",
+    )
+    restore_p.add_argument("path", help="Path to a .canhoto backup file")
+
+    manual_p = sub.add_parser(
+        "manual",
+        help="Keep transactions no statement shows (e.g. a Pix sent from a reserve)",
+    )
+    manual_sub = manual_p.add_subparsers(dest="manual_cmd", required=True)
+    madd_p = manual_sub.add_parser("add", help="Add a manual transaction")
+    _add_manual_fields(madd_p, creating=True)
+    madd_p.add_argument("--institution", default=None)
+    mlist_p = manual_sub.add_parser("list", help="List manual transactions")
+    mlist_p.add_argument("--month", default=None, help="Only this month (YYYY-MM)")
+    medit_p = manual_sub.add_parser("edit", help="Change a manual transaction")
+    medit_p.add_argument("--id", dest="tx_id", required=True)
+    _add_manual_fields(medit_p, creating=False)
+    mrm_p = manual_sub.add_parser("remove", help="Delete a manual transaction")
+    mrm_p.add_argument("--id", dest="tx_id", required=True)
+
     return parser
+
+
+def _add_manual_fields(p: argparse.ArgumentParser, *, creating: bool) -> None:
+    p.add_argument("--date", required=creating, help="YYYY-MM-DD")
+    p.add_argument("--amount", required=creating, help='Signed amount: "-3080.00" is money out')
+    p.add_argument("--description", required=creating)
+    p.add_argument("--category", help="Set by hand; omit to let rules classify")
+    p.add_argument("--kind", help="Default on add: expense for money out, income for money in")
+    p.add_argument("--merchant", help="Merchant name for reports")
+    p.add_argument("--account", help='Source account, e.g. "cofrinho"')
+    p.add_argument(
+        "--note", default="" if creating else None, help="Why this row is kept by hand"
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -276,9 +324,35 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         _print_json({"ok": False, "error": f"unknown export command: {args.export_cmd}"})
         return 2
+    if args.cmd == "backup":
+        return _run_service_cmd(lambda: service.backup(output=args.output))
+    if args.cmd == "restore":
+        return _run_service_cmd(lambda: service.restore(args.path))
+    if args.cmd == "manual":
+        return _run_service_cmd(lambda: _call_manual(args))
 
     parser.error(f"unknown command: {args.cmd}")
     return 2
+
+
+def _call_manual(args: argparse.Namespace) -> dict[str, Any]:
+    if args.manual_cmd == "list":
+        return service.manual_list(month=args.month)
+    if args.manual_cmd == "remove":
+        return service.manual_remove(args.tx_id)
+    fields = {
+        "date": args.date,
+        "amount": args.amount,
+        "description": args.description,
+        "category": args.category,
+        "kind": args.kind,
+        "merchant": args.merchant,
+        "account": args.account,
+        "note": args.note,
+    }
+    if args.manual_cmd == "add":
+        return service.manual_add(institution=args.institution, **fields)
+    return service.manual_edit(args.tx_id, **fields)
 
 
 def _run_service_cmd(fn: Callable[[], dict[str, Any]]) -> int:
@@ -290,6 +364,7 @@ def _run_service_cmd(fn: Callable[[], dict[str, Any]]) -> int:
     except (
         ValueError,
         FileNotFoundError,
+        FileExistsError,
         PermissionError,
         ParserNotFoundError,
         ParserLoadError,

@@ -35,5 +35,8 @@ MCP_TOOL_DENYLIST = frozenset(
         "sheets_push",
         "sheets_setup",
         "get_config_secrets",
+        # Full ledger dumps: CLI only.
+        "backup",
+        "restore",
     }
 )

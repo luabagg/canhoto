@@ -147,6 +147,26 @@ The PDF goes to `~/.canhoto/exports/2026-06-summary.pdf` by default. It shows
 totals by category and the top merchants in each category. It never contains a
 transaction list or raw statement descriptions.
 
+### Keep manual transactions
+
+Some money moves outside every statement you can export, for example a Pix sent
+straight from a savings reserve. Keep those rows yourself:
+
+```bash
+canhoto manual add --date 2026-09-17 --amount -3080.00 \
+  --description "Pix enviado Example Tax Office" --category Taxes \
+  --merchant IPVA --account cofrinho --note "Car tax, paid from the reserve"
+canhoto manual list [--month 2026-09]
+canhoto manual edit --id manual-... --amount -3100.00 --category Taxes
+canhoto manual remove --id manual-...
+```
+
+A negative amount is money out. With `--category`, the row is set by hand.
+Without it, your rules classify the row, or it waits in `review`. Canhoto
+refuses to add the same date, amount, description, and account twice. An edit
+keeps the id. `edit` and `remove` refuse statement rows: those change only when
+you ingest the statement again.
+
 ### Teach Canhoto your rules
 
 When a counterparty always means the same thing, store a rule. `categorize
@@ -196,6 +216,45 @@ canhoto export pdf 2026-06 --profile minimal
 - `modern`: clean report with metric cards and a category chart.
 - `minimal`: text-only report without a chart.
 
+## Back up and restore
+
+Write your ledger, rules, merchant memory, config, and parsers to one file:
+
+```bash
+canhoto backup                        # ./canhoto-YYYY-MM-DD.canhoto
+canhoto backup --output ~/backups/home.canhoto
+```
+
+Restore it into a new or empty data directory. Do not run `canhoto init` there first:
+
+```bash
+CANHOTO_DATA_DIR=~/.canhoto-new canhoto restore ~/backups/home.canhoto
+```
+
+A `.canhoto` file is a zip archive. Open it with any unzip tool:
+
+| File | Content |
+|---|---|
+| `manifest.json` | Format version, Canhoto version, schema revision, row counts, SHA-256 of each file |
+| `canhoto.sql` | Plain SQL dump of `canhoto.db`: schema and rows. `sqlite3 new.db < canhoto.sql` rebuilds it. |
+| `config.json` | Settings and the parser registry |
+| `parsers/*.py` | Your parser modules |
+
+The backup does not include raw statements. A restored ledger cannot re-parse
+old statements until you ingest them again.
+
+Restore checks every checksum and the schema revision before it writes. It
+prepares and migrates the ledger in a private temporary directory. It installs
+the full restore only after all files are ready. A failed restore permits a
+retry. Restore refuses non-empty directories and directory links. It keeps
+parser modules in the restored directory's `parsers/` folder, even when the
+backup used a custom parser location.
+
+Restore only backups you trust. Checksums do not authenticate the sender. The
+backup includes executable parser modules and holds your full ledger in plain
+text, so keep the file private. `backup` and `restore` are CLI only: the MCP
+server never gives an agent a full ledger dump.
+
 ## MCP
 
 The CLI and the MCP server use the same service layer. For agent-assisted use,
@@ -235,6 +294,10 @@ canhoto rules add|list|remove
 canhoto review --month YYYY-MM [--cursor ID] [--limit N]
 canhoto breakdown --month YYYY-MM
 canhoto export pdf YYYY-MM [--profile canhoto|modern|minimal] [--output PATH]
+canhoto manual add --date YYYY-MM-DD --amount SIGNED --description TEXT [--category CAT]
+canhoto manual list [--month YYYY-MM] | edit --id ID [fields] | remove --id ID
+canhoto backup [--output PATH]
+canhoto restore PATH
 ```
 
 ## Develop
@@ -266,5 +329,6 @@ git push origin main --tags
 ## Privacy
 
 Your statements and database stay in the data directory. Do not commit
-statements, tokens, database files, or `~/.canhoto`. Back up `canhoto.db` before
-you upgrade: it holds your ledger and your rules.
+statements, tokens, database files, backups, or `~/.canhoto`. Run
+`canhoto backup` before you upgrade: the database holds your ledger and your
+rules.

@@ -15,6 +15,7 @@ import io
 import json
 import os
 import tempfile
+from pathlib import Path
 
 
 def _run_cli(*args: str) -> dict[str, object]:
@@ -32,10 +33,22 @@ def main() -> None:
     from canhoto.core import migrate
 
     assert callable(mcp_server.main)
-    with tempfile.TemporaryDirectory() as data_dir:
-        os.environ["CANHOTO_DATA_DIR"] = data_dir
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        os.environ["CANHOTO_DATA_DIR"] = str(root / "source")
         _run_cli("init")
         assert _run_cli("rules", "list")["rules"] == []
+        doctor = _run_cli("doctor")
+        assert doctor["db_revision"] == migrate.HEAD_REVISION, doctor
+        _run_cli(
+            "manual", "add", "--date", "2026-09-05", "--amount", "-12.50",
+            "--description", "Example purchase", "--category", "Food",
+        )
+        backup_file = root / "home.canhoto"
+        _run_cli("backup", "--output", str(backup_file))
+        os.environ["CANHOTO_DATA_DIR"] = str(root / "target")
+        _run_cli("restore", str(backup_file))
+        assert _run_cli("manual", "list")["count"] == 1
         doctor = _run_cli("doctor")
         assert doctor["db_revision"] == migrate.HEAD_REVISION, doctor
     print("smoke test passed")

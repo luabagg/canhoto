@@ -12,3 +12,4 @@ dist/
 .canhoto/
 *.db
 .pi-subagents/
+*.canhoto

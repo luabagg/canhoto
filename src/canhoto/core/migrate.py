@@ -69,14 +69,22 @@ def wipe_and_upgrade(path: Path | None = None) -> str:
 
 def head_revision() -> str:
     """Return the script-directory head revision id."""
-    cfg = Config()
-    cfg.set_main_option("script_location", str(migrations_dir()))
-    cfg.set_main_option("path_separator", "os")
-    script = ScriptDirectory.from_config(cfg)
-    heads = script.get_heads()
+    heads = _script_directory().get_heads()
     if len(heads) != 1:
         raise RuntimeError(f"expected one alembic head, got {heads!r}")
     return heads[0]
+
+
+def known_revisions() -> frozenset[str]:
+    """Return every revision id this package can upgrade from."""
+    return frozenset(rev.revision for rev in _script_directory().walk_revisions())
+
+
+def _script_directory() -> ScriptDirectory:
+    cfg = Config()
+    cfg.set_main_option("script_location", str(migrations_dir()))
+    cfg.set_main_option("path_separator", "os")
+    return ScriptDirectory.from_config(cfg)
 
 
 __all__ = [
@@ -84,6 +92,7 @@ __all__ = [
     "alembic_config",
     "current_revision",
     "head_revision",
+    "known_revisions",
     "migrations_dir",
     "sqlite_url",
     "upgrade_to_head",

@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
 
+from canhoto.core import manual as core_manual
 from canhoto.core.config import db_path
 from canhoto.core.migrate import upgrade_to_head
 from canhoto.core.models import (
@@ -413,6 +414,14 @@ def get_transaction(tx_id: str, *, path: Path | None = None) -> LedgerTransactio
     return _row_to_tx(row)
 
 
+def delete_transaction(tx_id: str, *, path: Path | None = None) -> bool:
+    """Delete one row and its statement links. Returns False if it did not exist."""
+    with connect(path) as conn:
+        conn.execute("DELETE FROM statement_transactions WHERE transaction_id = ?", (tx_id,))
+        cur = conn.execute("DELETE FROM transactions WHERE id = ?", (tx_id,))
+        return cur.rowcount > 0
+
+
 def apply_classifications(
     patches: list[ClassificationPatch],
     *,
@@ -436,7 +445,10 @@ def apply_classifications(
                 params.append(patch.category)
             if patch.kind is not None:
                 updates.append("kind = ?")
-                params.append(patch.kind)
+                params.append(
+                    core_manual.normalize_kind(patch.kind)
+                    if row["source_kind"] == core_manual.SOURCE_KIND else patch.kind
+                )
             if patch.is_expense is not None:
                 updates.append("is_expense = ?")
                 params.append(1 if patch.is_expense else 0)
@@ -460,6 +472,12 @@ def apply_classifications(
             if patch.classification_source is not None or "user_rule_id" in patch.model_fields_set:
                 updates.append("user_rule_id = ?")
                 params.append(patch.user_rule_id)
+            if (
+                row["source_kind"] == core_manual.SOURCE_KIND
+                and patch.classification_source == "manual"
+            ):
+                updates.append("metadata = ?")
+                params.append(_manual_choice_metadata(row, patch))
             if not updates:
                 applied += 1
                 continue
@@ -471,6 +489,15 @@ def apply_classifications(
             )
             applied += 1
     return ClassificationResult(applied=applied, missing=missing)
+
+
+def _manual_choice_metadata(row: sqlite3.Row, patch: ClassificationPatch) -> str:
+    metadata = json.loads(row["metadata"])
+    if patch.kind is not None:
+        metadata["manual_kind"] = core_manual.normalize_kind(patch.kind)
+    if patch.merchant_normalized is not None:
+        metadata["manual_merchant"] = True
+    return json.dumps(metadata, ensure_ascii=False)
 
 
 def count_pending_review(

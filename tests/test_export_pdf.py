@@ -304,17 +304,49 @@ def _summary_bundle(
     )
 
 
-def test_chart_legend_merges_real_other_category_into_rollup(tmp_path: Path) -> None:
+def test_chart_rollup_names_how_many_categories_it_holds(tmp_path: Path) -> None:
+    """The rollup must not share a name with a real "Other" category."""
     import fitz
     from canhoto.exporters.pdf_summary import PdfSummaryExporter
 
     categories = {f"Category {index}": f"{100 - index}.00" for index in range(8)}
-    categories["Other"] = "500.00"  # ranks first, so it is kept beside the rollup
+    categories["Other"] = "500.00"
     output = tmp_path / "other.pdf"
     PdfSummaryExporter(profile="canhoto").export(_summary_bundle(categories), output)
 
     lines = [line.strip() for line in fitz.open(output)[0].get_text().splitlines()]
-    assert lines.count("Other") == 1
+    assert "Other" in lines
+    assert "3 more categories" in lines
+    assert "Category 4" in lines
+    assert "Category 5" not in lines
+
+
+def test_chart_shows_every_category_when_they_fit(tmp_path: Path) -> None:
+    import fitz
+    from canhoto.exporters.pdf_summary import PdfSummaryExporter
+
+    categories = {f"Category {index}": f"{100 - index}.00" for index in range(7)}
+    output = tmp_path / "fit.pdf"
+    PdfSummaryExporter(profile="canhoto").export(_summary_bundle(categories), output)
+
+    lines = [line.strip() for line in fitz.open(output)[0].get_text().splitlines()]
+    assert "Category 6" in lines
+    assert not any(line.endswith("more categories") for line in lines)
+
+
+def test_merchant_summary_heading_shows_category_total(tmp_path: Path) -> None:
+    import fitz
+    from canhoto.exporters.pdf_summary import PdfSummaryExporter
+
+    merchants = {"Groceries": {f"Market {n}": "100.50" for n in range(5)}}
+    output = tmp_path / "heading.pdf"
+    PdfSummaryExporter(profile="canhoto").export(
+        _summary_bundle({"Groceries": "502.50"}, merchants), output
+    )
+
+    lines = [line.strip() for line in fitz.open(output)[0].get_text().splitlines()]
+    heading = next(line for line in lines if line.startswith("GROCERIES"))
+    assert heading.endswith("R$ 502,50")
 
 
 def test_chart_pie_fills_the_whole_ring_around_its_center(tmp_path: Path) -> None:

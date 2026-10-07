@@ -19,6 +19,7 @@ from pathlib import Path
 
 from canhoto.core import store as core_store
 from canhoto.core.models import (
+    USER_RULE_KINDS,
     ClassificationPatch,
     ClassificationResult,
     ClassificationSource,
@@ -156,7 +157,7 @@ def apply_rules(
             out,
             category=out.category or "uncategorized",
             kind=out.kind or "expense",
-            is_expense=True,
+            is_expense=out.kind == "expense" if out.kind in USER_RULE_KINDS else True,
             confidence=max(out.confidence, 0.2),
             needs_review=True,
             review_reason=out.review_reason or "needs_category",
@@ -445,7 +446,8 @@ def _normalize_merchant(desc: str) -> str:
         d,
         flags=re.IGNORECASE,
     )
-    d = re.sub(r"^(DL\*|MP\*|EC\*|IFD\*)\s*", "", d, flags=re.IGNORECASE)
+    # Payment-processor prefixes; the real merchant follows the "*".
+    d = re.sub(r"^(DL\*|MP\*|EC\*)\s*", "", d, flags=re.IGNORECASE)
     return d[:80]
 
 

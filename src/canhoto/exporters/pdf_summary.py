@@ -21,7 +21,6 @@ _RED = (239, 68, 68)
 _PINK = (236, 72, 153)
 _SLATE = (71, 85, 105)
 _CHART_COLORS = (_BLUE, _TEAL, _PURPLE, _ORANGE, _PINK, _RED, _SLATE)
-_OTHER = "Other"
 
 # canhoto (receipt)
 _PAPER = (244, 232, 190)
@@ -294,17 +293,20 @@ class PdfSummaryExporter:
         self._receipt_heading(pdf)
         row_height = 5
         categories = sorted(
-            merchant_spend_by_category.items(),
-            key=lambda item: sum((_amount(value) for value in item[1].values()), Decimal("0")),
+            (
+                (category, merchants, sum((_amount(v) for v in merchants.values()), Decimal(0)))
+                for category, merchants in merchant_spend_by_category.items()
+            ),
+            key=lambda item: item[2],
             reverse=True,
         )
-        for category, merchants in categories:
+        for category, merchants, total in categories:
             self._ensure_receipt_space(pdf, row_height * 2)
             pdf.set_font("Courier" if self.profile != "minimal" else "Helvetica", "B", 8)
             pdf.cell(
                 180,
                 row_height,
-                _safe(_truncate(category.upper(), 30)),
+                _dotted_row(_safe(_truncate(category.upper(), 30)), total, width=45),
                 new_x="LMARGIN",
                 new_y="NEXT",
             )
@@ -312,13 +314,10 @@ class PdfSummaryExporter:
                 self._ensure_receipt_space(pdf, row_height)
                 # Set per row: a continuation page heading changes the font.
                 pdf.set_font("Courier" if self.profile != "minimal" else "Helvetica", size=8)
-                label = _safe(_truncate(merchant, 30))
-                formatted = _brl(amount)
-                dots = "." * max(3, 41 - len(label) - len(formatted))
                 pdf.cell(
                     180,
                     row_height,
-                    f"  {label} {dots} {formatted}",
+                    "  " + _dotted_row(_safe(_truncate(merchant, 30)), amount, width=43),
                     new_x="LMARGIN",
                     new_y="NEXT",
                 )
@@ -377,20 +376,17 @@ class PdfSummaryExporter:
 
 
 def _chart_rows(categories: dict[str, str]) -> list[tuple[str, Decimal, tuple[int, int, int]]]:
-    """Return chart slices; a real "Other" category joins the overflow slice."""
+    """Return chart slices; overflow categories roll up into one counted slice."""
     rows = sorted(
-        ((name, _amount(value)) for name, value in categories.items() if name != _OTHER),
+        ((name, _amount(value)) for name, value in categories.items()),
         key=lambda item: item[1],
         reverse=True,
     )
-    other = _amount(categories.get(_OTHER, "0"))
-    slots = len(_CHART_COLORS) - (1 if other else 0)
-    if len(rows) > slots:
+    if len(rows) > len(_CHART_COLORS):
         kept = len(_CHART_COLORS) - 1
-        other += sum((amount for _, amount in rows[kept:]), Decimal(0))
-        rows = rows[:kept]
-    if other:
-        rows.append((_OTHER, other))
+        overflow = rows[kept:]
+        rollup = sum((amount for _, amount in overflow), Decimal(0))
+        rows = [*rows[:kept], (f"{len(overflow)} more categories", rollup)]
     return [(name, amount, _CHART_COLORS[index]) for index, (name, amount) in enumerate(rows)]
 
 
@@ -405,6 +401,13 @@ def _top_merchants(merchants: dict[str, str]) -> list[tuple[str, Decimal]]:
         return rows
     other = sum((amount for _, amount in rows[3:]), Decimal("0"))
     return [*rows[:3], ("Other merchants", other)]
+
+
+def _dotted_row(label: str, amount: Decimal, *, width: int) -> str:
+    """Join label and amount with dot leaders so rows of one width align."""
+    formatted = _brl(amount)
+    dots = "." * max(3, width - 2 - len(label) - len(formatted))
+    return f"{label} {dots} {formatted}"
 
 
 def _amount(value: str | Decimal) -> Decimal:

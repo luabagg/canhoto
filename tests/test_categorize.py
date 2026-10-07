@@ -165,5 +165,16 @@ def test_rules_normalize_merchant_without_repeating_it() -> None:
     assert out.merchant_normalized == "ACME STORE"
 
 
+def test_rules_keep_ifood_prefix_in_merchant_name() -> None:
+    """iFood card rows read "IFD*BR"; without the prefix the merchant is unrecognizable."""
+    out = apply_rules(_tx(description="IFD*BR", source_kind="card"))
+    assert out.merchant_normalized == "IFD*BR"
+
+
+def test_rules_strip_payment_processor_prefix() -> None:
+    out = apply_rules(_tx(description="MP*MELIMAIS", source_kind="card"))
+    assert out.merchant_normalized == "MELIMAIS"
+
+
 def test_merchant_key_uses_merchant_text_once() -> None:
     assert merchant_key_for(_tx(description="ACME STORE")) == "ACME STORE"

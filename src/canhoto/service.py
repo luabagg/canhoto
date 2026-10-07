@@ -11,18 +11,22 @@ import os
 import sqlite3
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import ValidationError
 
+from canhoto.core import backup as core_backup
 from canhoto.core import breakdown as core_breakdown
 from canhoto.core import categorize as core_categorize
 from canhoto.core import config as core_config
+from canhoto.core import manual as core_manual
 from canhoto.core import migrate as core_migrate
 from canhoto.core import store as core_store
 from canhoto.core.models import (
     ClassificationPatch,
+    LedgerTransaction,
     ParserEntry,
     ReportBundle,
     StatementRecord,
@@ -968,4 +972,192 @@ def export_pdf(
         "size": size,
         "profile": profile,
         "data_dir": str(data_dir.resolve()),
+    }
+
+
+def backup(
+    *,
+    output: str | Path | None = None,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Write the ledger, config, and parsers to one ``.canhoto`` file. CLI only.
+
+    Default path: ``./canhoto-YYYY-MM-DD.canhoto``. Raw statements stay out.
+    """
+    data_dir = _ensure_data_dir(root)
+    if output is not None:
+        dest = Path(output).expanduser().resolve()
+    else:
+        stamp = datetime.now(UTC).strftime("%Y-%m-%d")
+        dest = (Path.cwd() / f"canhoto-{stamp}{core_backup.FILE_SUFFIX}").resolve()
+    manifest = core_backup.write_backup(data_dir, dest)
+    return {
+        "ok": True,
+        "path": str(dest),
+        "size": dest.stat().st_size,
+        "schema_revision": manifest["schema_revision"],
+        "counts": manifest["counts"],
+        "data_dir": str(data_dir.resolve()),
+    }
+
+
+def restore(path: str | Path, *, root: Path | None = None) -> dict[str, Any]:
+    """Restore a trusted backup into a new or empty data directory. CLI only."""
+    data_dir = (root if root is not None else core_config.get_data_dir()).expanduser()
+    src = Path(path).expanduser().resolve()
+    manifest = core_backup.restore_backup(src, data_dir)
+    return {
+        "ok": True,
+        "path": str(src),
+        "created_at": manifest["created_at"],
+        "schema_revision": manifest["schema_revision"],
+        "counts": manifest["counts"],
+        "data_dir": str(data_dir.resolve()),
+        "db_revision": core_migrate.current_revision(core_config.db_path(data_dir)),
+    }
+
+
+def manual_add(
+    *,
+    date: str,
+    amount: str,
+    description: str,
+    category: str | None = None,
+    kind: str | None = None,
+    merchant: str | None = None,
+    account: str | None = None,
+    institution: str | None = None,
+    note: str = "",
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Add a row no statement shows, e.g. a Pix sent from a reserve.
+
+    ``amount`` is signed major units: "-3080.00" is money out. With ``category``
+    the row is set by hand; without it, rules classify it or leave it for review.
+    """
+    tx = core_manual.new_transaction(
+        tx_date=core_manual.parse_date(date),
+        amount_minor=core_manual.parse_signed_amount(amount),
+        description=description,
+        kind=kind,
+        merchant=merchant,
+        account=account,
+        institution=institution,
+        note=note,
+    )
+    data_dir = _ensure_data_dir(root)
+    db_file = core_config.db_path(data_dir)
+    same_month = core_store.list_transactions(
+        month=tx.month, source_kind=core_manual.SOURCE_KIND, limit=50_000, path=db_file
+    )
+    duplicate = next((old for old in same_month if core_manual.is_same_entry(old, tx)), None)
+    if duplicate is not None:
+        raise ValueError(f"manual transaction {duplicate.id} already exists with these facts")
+
+    tx = _classify_manual(tx, category, data_dir=data_dir, db_file=db_file)
+    core_store.upsert_transactions([tx], path=db_file, preserve_classification=False)
+    return {"ok": True, "transaction": _manual_view(tx), "data_dir": str(data_dir.resolve())}
+
+
+def manual_list(*, month: str | None = None, root: Path | None = None) -> dict[str, Any]:
+    """List manual rows. Statement rows never appear here."""
+    data_dir = _ensure_data_dir(root)
+    rows = core_store.list_transactions(
+        month=assert_month(month) if month is not None else None,
+        source_kind=core_manual.SOURCE_KIND,
+        limit=50_000,
+        path=core_config.db_path(data_dir),
+    )
+    return {
+        "ok": True,
+        "count": len(rows),
+        "transactions": [_manual_view(tx) for tx in rows],
+        "data_dir": str(data_dir.resolve()),
+    }
+
+
+def manual_edit(
+    tx_id: str,
+    *,
+    date: str | None = None,
+    amount: str | None = None,
+    description: str | None = None,
+    category: str | None = None,
+    kind: str | None = None,
+    merchant: str | None = None,
+    account: str | None = None,
+    note: str | None = None,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Change facts or the category of a manual row. The id stays the same."""
+    facts = {
+        "date": date,
+        "amount": amount,
+        "description": description,
+        "kind": kind,
+        "merchant": merchant,
+        "account": account,
+        "note": note,
+    }
+    if category is None and all(value is None for value in facts.values()):
+        raise ValueError("nothing to change: pass at least one field")
+    data_dir = _ensure_data_dir(root)
+    db_file = core_config.db_path(data_dir)
+    current = core_manual.require_manual(core_store.get_transaction(tx_id, path=db_file), tx_id)
+
+    edited = core_manual.edit_transaction(
+        current,
+        tx_date=core_manual.parse_date(date) if date is not None else None,
+        amount_minor=core_manual.parse_signed_amount(amount) if amount is not None else None,
+        description=description,
+        kind=kind,
+        merchant=merchant,
+        account=account,
+        note=note,
+    )
+    if category is not None:
+        edited = core_manual.classify_by_hand(edited, category)
+    elif edited.classification_source != "manual" and any(
+        value is not None for field, value in facts.items() if field != "note"
+    ):
+        edited = _classify_manual(edited, None, data_dir=data_dir, db_file=db_file)
+    core_store.upsert_transactions([edited], path=db_file, preserve_classification=False)
+    return {"ok": True, "transaction": _manual_view(edited), "data_dir": str(data_dir.resolve())}
+
+
+def manual_remove(tx_id: str, *, root: Path | None = None) -> dict[str, Any]:
+    """Delete a manual row. Statement rows cannot be removed this way."""
+    data_dir = _ensure_data_dir(root)
+    db_file = core_config.db_path(data_dir)
+    tx = core_manual.require_manual(core_store.get_transaction(tx_id, path=db_file), tx_id)
+    core_store.delete_transaction(tx.id, path=db_file)
+    return {"ok": True, "removed": _manual_view(tx), "data_dir": str(data_dir.resolve())}
+
+
+def _classify_manual(
+    tx: LedgerTransaction, category: str | None, *, data_dir: Path, db_file: Path
+) -> LedgerTransaction:
+    if category is not None:
+        return core_manual.classify_by_hand(tx, category)
+    cfg = core_config.load_config(data_dir)
+    return core_categorize.apply_rules(
+        tx,
+        own_name_markers=list(cfg.own_name_markers),
+        user_rules=core_store.list_user_rules(path=db_file),
+    )
+
+
+def _manual_view(tx: LedgerTransaction) -> dict[str, Any]:
+    return {
+        "id": tx.id,
+        "date": tx.date.isoformat(),
+        "amount": f"{Decimal(tx.amount_minor).scaleb(-2):.2f}",
+        "description": tx.description,
+        "merchant": tx.merchant_normalized,
+        "account": tx.account_id,
+        "category": tx.category,
+        "kind": tx.kind,
+        "is_expense": tx.is_expense,
+        "needs_review": tx.needs_review,
+        "note": tx.metadata.get("note"),
     }

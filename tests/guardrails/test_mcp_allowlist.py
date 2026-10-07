@@ -33,6 +33,8 @@ EXPECTED_DENYLIST = frozenset(
         "sheets_push",
         "sheets_setup",
         "get_config_secrets",
+        "backup",
+        "restore",
     }
 )
 
