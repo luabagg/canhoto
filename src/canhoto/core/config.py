@@ -17,7 +17,7 @@ _ENV_DATA_DIR = "CANHOTO_DATA_DIR"
 _DEFAULT_DIRNAME = ".canhoto"
 _CONFIG_NAME = "config.json"
 _DB_NAME = "canhoto.db"
-_SUBDIRS = ("parsers", "exports", "raw", "fixtures")
+_SUBDIRS = ("parsers", "exports", "raw", "fixtures", "inbox")
 
 
 def get_data_dir() -> Path:
@@ -40,8 +40,9 @@ def db_path(root: Path | None = None) -> Path:
 def init_data_dir(root: Path | None = None) -> Path:
     """Create data-dir layout and default config.json if missing.
 
-    Creates ``parsers/``, ``exports/``, ``raw/``, ``fixtures/``, and
-    ``config.json``. Does not create the database file.
+    Creates ``parsers/``, ``exports/``, ``raw/``, ``fixtures/``, ``inbox/``,
+    and ``config.json``. Does not create the database file. ``inbox/`` holds
+    statement uploads before ingest.
     """
     path = (root if root is not None else get_data_dir()).expanduser()
     path.mkdir(parents=True, exist_ok=True)

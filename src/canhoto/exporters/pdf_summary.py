@@ -11,7 +11,12 @@ from canhoto.core.models import ReportBundle
 from canhoto.core.money import format_amount
 
 EXPORTER_ID = "pdf_summary"
-PDF_PROFILES = frozenset({"canhoto", "modern", "minimal"})
+PDF_PROFILE_SUMMARIES = {
+    "canhoto": "Receipt-style report with a category chart.",
+    "modern": "Metric cards and a category chart.",
+    "minimal": "Text-only report without a chart.",
+}
+PDF_PROFILES = frozenset(PDF_PROFILE_SUMMARIES)
 
 # Shared palette
 _BLUE = (42, 99, 255)
@@ -54,7 +59,11 @@ class PdfSummaryExporter:
     def export(self, bundle: ReportBundle, dest: Path) -> Path:
         dest = Path(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(self.render(bundle))
+        return dest
 
+    def render(self, bundle: ReportBundle) -> bytes:
+        """Return the PDF bytes without writing a file."""
         bd = bundle.breakdown
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
@@ -83,8 +92,7 @@ class PdfSummaryExporter:
                                        currency=currency, exponent=exponent)
                 self._footer(pdf)
 
-        pdf.output(str(dest))
-        return dest
+        return bytes(pdf.output())
 
     def _add_page(self, pdf: FPDF) -> None:
         """Add a styled page without treating a page break as content."""

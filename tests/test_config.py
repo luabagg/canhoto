@@ -21,7 +21,7 @@ from canhoto.core.config import (
 )
 from canhoto.core.models import AgentViewConfig, AppConfig, ParserEntry
 
-REQUIRED_SUBDIRS = ("parsers", "exports", "raw", "fixtures")
+REQUIRED_SUBDIRS = ("parsers", "exports", "raw", "fixtures", "inbox")
 FORBIDDEN_CONFIG_KEYS = {
     "spreadsheet_id",
     "google_credentials",

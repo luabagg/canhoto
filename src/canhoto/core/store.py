@@ -405,6 +405,28 @@ def list_transactions(
     return [_row_to_tx(r) for r in rows]
 
 
+def list_months(*, path: Path | None = None) -> list[dict[str, int | str]]:
+    """Return one aggregate row per calendar month. No ledger fields."""
+    sql = """
+        SELECT month,
+               COUNT(*) AS transaction_count,
+               SUM(CASE WHEN needs_review = 1 THEN 1 ELSE 0 END) AS pending_review
+        FROM transactions
+        GROUP BY month
+        ORDER BY month DESC
+    """
+    with connect(path) as conn:
+        rows = conn.execute(sql).fetchall()
+    return [
+        {
+            "month": str(row["month"]),
+            "transaction_count": int(row["transaction_count"]),
+            "pending_review": int(row["pending_review"]),
+        }
+        for row in rows
+    ]
+
+
 def get_transaction(tx_id: str, *, path: Path | None = None) -> LedgerTransaction | None:
     with connect(path) as conn:
         row = conn.execute(

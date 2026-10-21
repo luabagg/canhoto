@@ -49,7 +49,7 @@ def test_init_creates_layout_via_service(data_home: Path) -> None:
 
     assert result["data_dir"] == str(data_home.resolve())
     assert data_home.is_dir()
-    for name in ("parsers", "exports", "raw", "fixtures"):
+    for name in ("parsers", "exports", "raw", "fixtures", "inbox"):
         assert (data_home / name).is_dir()
     assert config_path().is_file()
     assert not db_path().exists()

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Canhoto</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">C</span>
+        <span class="brand-name">Canhoto</span>
+      </div>
+      <nav class="nav" aria-label="Sections">
+        <p class="nav-group">Ledger</p>
+        <button type="button" data-view="overview">Overview</button>
+        <button type="button" data-view="review">Review</button>
+        <button type="button" data-view="manual">Manual rows</button>
+        <p class="nav-group">Data</p>
+        <button type="button" data-view="upload">Upload</button>
+        <button type="button" data-view="rules">Rules</button>
+        <button type="button" data-view="export">Export</button>
+        <p class="nav-group">System</p>
+        <button type="button" data-view="settings">Settings</button>
+      </nav>
+      <div class="sidebar-foot">
+        <span class="dot" id="api-dot" aria-hidden="true"></span>
+        <span id="api-label">Connecting</span>
+      </div>
+    </aside>
+    <div class="content">
+      <header class="topbar">
+        <div>
+          <h1 id="view-title">Overview</h1>
+          <p id="status-line" class="muted">Loading the local API.</p>
+        </div>
+        <label class="month-select">
+          <span>Month</span>
+          <select id="month-select"></select>
+        </label>
+      </header>
+      <div id="flash" class="flash" hidden></div>
+      <main id="main"></main>
+    </div>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-"""Service façade for CLI/MCP adapters.
+"""Service façade for the CLI, the MCP server, and the local HTTP API.
 
 Thin orchestration over core config + store + parser lifecycle. No Sheets,
 no raw SQL exposure, no unbounded ledger dumps.
@@ -6,6 +6,7 @@ no raw SQL exposure, no unbounded ledger dumps.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 import sqlite3
@@ -31,12 +32,13 @@ from canhoto.core.models import (
     StatementRecord,
     UserRule,
 )
-from canhoto.core.money import currency_exponent, format_amount
+from canhoto.core.money import currency_exponent, format_amount, major_units
 from canhoto.core.pdf_text import extract_text
 from canhoto.core.policy import assert_month, clamp_batch_size
 from canhoto.core.redaction import to_review_item
 from canhoto.core.user_rules import amount_bound_to_minor
-from canhoto.exporters.pdf_summary import PdfSummaryExporter
+from canhoto.exporters.pdf_summary import PDF_PROFILE_SUMMARIES, PdfSummaryExporter
+from canhoto.exporters.raster import pdf_to_png_pages
 from canhoto.parsers import loader as parser_loader
 from canhoto.parsers import scaffold as parser_scaffold_mod
 from canhoto.parsers.loader import ParserLoadError, ParserNotFoundError
@@ -527,6 +529,57 @@ def ingest(
     }
 
 
+_UPLOAD_SUFFIXES = frozenset({".pdf", ".txt", ".text"})
+
+
+def receive_statements(
+    files: Sequence[tuple[str, bytes]],
+    *,
+    pdf_password: str | None = None,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Store uploaded bytes in ``inbox/``, then ingest those paths.
+
+    The stored name is the content hash plus a safe suffix. The original
+    file name is returned as a label and is not used as a path.
+    """
+    if not files:
+        raise ValueError("ingest requires at least one file")
+
+    prepared: list[tuple[str, bytes, str]] = []
+    for filename, content in files:
+        if not isinstance(content, bytes | bytearray) or not content:
+            raise ValueError("statement file is empty")
+        prepared.append((filename, bytes(content), _upload_suffix(filename)))
+
+    data_dir = _ensure_data_dir(root)
+    inbox = (data_dir / "inbox").resolve()
+    inbox.mkdir(parents=True, exist_ok=True)
+    staged: list[Path] = []
+    names: list[str] = []
+    for filename, content, suffix in prepared:
+        digest = hashlib.sha256(content).hexdigest()
+        dest = (inbox / f"{digest}{suffix}").resolve()
+        if dest.parent != inbox:
+            raise ValueError("upload path escaped inbox")
+        if not dest.is_file() or dest.read_bytes() != content:
+            dest.write_bytes(content)
+        staged.append(dest)
+        names.append(Path(filename).name)
+
+    result = ingest(staged, root=data_dir, pdf_password=pdf_password)
+    result["original_names"] = names
+    return result
+
+
+def _upload_suffix(filename: str) -> str:
+    suffix = Path(filename).name.lower()
+    suffix = Path(suffix).suffix
+    if suffix not in _UPLOAD_SUFFIXES:
+        raise ValueError("statement file must be .pdf or .txt")
+    return suffix
+
+
 def _archive_raw(
     raw_dir: Path,
     content_hash: str,
@@ -754,9 +807,21 @@ def rule_list(*, root: Path | None = None) -> dict[str, Any]:
     rules = core_store.list_user_rules(path=core_config.db_path(data_dir))
     return {
         "ok": True,
-        "rules": [rule.model_dump(mode="json") for rule in rules],
+        "rules": [_rule_view(rule) for rule in rules],
         "count": len(rules),
     }
+
+
+def _rule_view(rule: UserRule) -> dict[str, Any]:
+    """Stored rule plus its bounds as decimal strings in the rule's own scale."""
+    view = rule.model_dump(mode="json")
+    for key in ("min_amount", "max_amount"):
+        minor = getattr(rule, f"{key}_minor")
+        view[key] = (
+            None if minor is None
+            else format_amount(major_units(minor, rule.amount_exponent), rule.amount_exponent)
+        )
+    return view
 
 
 def rule_remove(rule_id: int, *, root: Path | None = None) -> dict[str, Any]:
@@ -875,6 +940,26 @@ def set_categories(
     }
 
 
+def list_months(*, root: Path | None = None) -> dict[str, Any]:
+    """Return month keys and counts. Does not create a database or return rows."""
+    data_dir = _ensure_data_dir(root)
+    db_file = core_config.db_path(data_dir)
+    if not db_file.is_file():
+        return {
+            "ok": True,
+            "months": [],
+            "data_dir": str(data_dir.resolve()),
+            "db_path": str(db_file),
+        }
+    core_store.ensure_schema(db_file)
+    return {
+        "ok": True,
+        "months": core_store.list_months(path=db_file),
+        "data_dir": str(data_dir.resolve()),
+        "db_path": str(db_file),
+    }
+
+
 def month_breakdown(
     month: str,
     *,
@@ -970,24 +1055,8 @@ def export_pdf(
     """
     month_value = assert_month(month)
     data_dir = _ensure_data_dir(root)
-    cfg = core_config.load_config(data_dir)
-    if not cfg.agent_view.allow_aggregates:
-        raise PermissionError(
-            "export_pdf refused: agent_view.allow_aggregates is false"
-        )
-
-    db_file = core_config.db_path(data_dir)
-    core_store.ensure_schema(db_file)
-    txs = _report_transactions(month_value, db_file)
-    breakdown = core_breakdown.compute_month_breakdown(month_value, txs)
-    merchant_spend_by_currency = core_breakdown.compute_merchant_spend_by_currency(txs)
-    generated_at = _utc_now_iso()
-    bundle = ReportBundle(
-        breakdown=breakdown,
-        merchant_spend_by_currency=merchant_spend_by_currency,
-        generated_at=generated_at,
-        title=f"Canhoto summary — {month_value}",
-    )
+    exporter = PdfSummaryExporter(profile=profile)
+    bundle = _report_bundle(month_value, data_dir, action="export_pdf")
 
     if output is not None:
         dest = Path(output).expanduser().resolve()
@@ -998,7 +1067,7 @@ def export_pdf(
         if exports_dir not in dest.parents and dest.parent != exports_dir:
             raise RuntimeError("export path escaped exports directory")
 
-    written = PdfSummaryExporter(profile=profile).export(bundle, dest)
+    written = exporter.export(bundle, dest)
     size = written.stat().st_size
     if size <= 0:
         raise RuntimeError("export produced empty PDF")
@@ -1011,6 +1080,54 @@ def export_pdf(
         "profile": profile,
         "data_dir": str(data_dir.resolve()),
     }
+
+
+def preview_pdf(
+    month: str,
+    *,
+    profile: str = "canhoto",
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Render the summary PDF as base64 PNG pages. Writes no file."""
+    month_value = assert_month(month)
+    data_dir = _ensure_data_dir(root)
+    exporter = PdfSummaryExporter(profile=profile)
+    content = exporter.render(_report_bundle(month_value, data_dir, action="preview_pdf"))
+    pages = pdf_to_png_pages(content)
+    return {
+        "ok": True,
+        "month": month_value,
+        "profile": profile,
+        "page_count": len(pages),
+        "pages": [base64.b64encode(page).decode("ascii") for page in pages],
+    }
+
+
+def pdf_profiles() -> dict[str, Any]:
+    """List the built-in PDF layouts and what each one shows."""
+    return {
+        "ok": True,
+        "default": "canhoto",
+        "profiles": [
+            {"id": name, "summary": summary}
+            for name, summary in PDF_PROFILE_SUMMARIES.items()
+        ],
+    }
+
+
+def _report_bundle(month: str, data_dir: Path, *, action: str) -> ReportBundle:
+    cfg = core_config.load_config(data_dir)
+    if not cfg.agent_view.allow_aggregates:
+        raise PermissionError(f"{action} refused: agent_view.allow_aggregates is false")
+    db_file = core_config.db_path(data_dir)
+    core_store.ensure_schema(db_file)
+    txs = _report_transactions(month, db_file)
+    return ReportBundle(
+        breakdown=core_breakdown.compute_month_breakdown(month, txs),
+        merchant_spend_by_currency=core_breakdown.compute_merchant_spend_by_currency(txs),
+        generated_at=_utc_now_iso(),
+        title=f"Canhoto summary — {month}",
+    )
 
 
 def backup(

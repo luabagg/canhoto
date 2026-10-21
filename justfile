@@ -32,6 +32,10 @@ canhoto *args:
 mcp:
     uv run canhoto-mcp
 
+# Local page (127.0.0.1:8766) and JSON API (127.0.0.1:8765)
+dashboard:
+    uv run canhoto dashboard
+
 # Tests (use python -m: bare pytest shebang can break after renames)
 test *args:
     uv run python -m pytest -q {{args}}

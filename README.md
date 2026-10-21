@@ -409,6 +409,32 @@ mcp_servers:
     command: canhoto-mcp
 ```
 
+## Dashboard
+
+The page and the API are separate programs. The page only sends HTTP requests.
+The API calls the same service as the CLI. The MCP server is a third program.
+
+```bash
+canhoto dashboard
+```
+
+Open `http://127.0.0.1:8766`. The API listens on `http://127.0.0.1:8765`.
+Both bind to loopback only.
+
+You can start them apart:
+
+```bash
+canhoto-api
+canhoto-page
+```
+
+The page can upload a statement, run rules, review a batch, keep manual rows,
+read a month, and download the summary PDF. It does not write parsers. Backup
+and restore stay on the CLI.
+
+An upload is stored in `~/.canhoto/inbox/`, then ingested. Ingest still keeps
+a content-addressed copy in `raw/`. Backup still omits statement files.
+
 ## CLI commands
 
 ```text
@@ -428,6 +454,7 @@ canhoto manual add --date YYYY-MM-DD --amount SIGNED --description TEXT [--curre
 canhoto manual list [--month YYYY-MM] | edit --id ID [fields] | remove --id ID
 canhoto backup [--output PATH]
 canhoto restore PATH
+canhoto dashboard [--api-port 8765] [--page-port 8766]
 ```
 
 ## Develop

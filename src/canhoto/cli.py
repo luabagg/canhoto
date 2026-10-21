@@ -10,6 +10,7 @@ Console entrypoint ``canhoto``. Examples::
     canhoto categorize apply --file patches.json
     canhoto breakdown --month YYYY-MM
     canhoto export pdf YYYY-MM
+    canhoto dashboard
     canhoto backup --output home.canhoto
     canhoto restore home.canhoto
     canhoto manual add --date YYYY-MM-DD --amount -10.00 --description TEXT
@@ -272,6 +273,17 @@ def build_parser() -> argparse.ArgumentParser:
     mrm_p = manual_sub.add_parser("remove", help="Delete a manual transaction")
     mrm_p.add_argument("--id", dest="tx_id", required=True)
 
+    dashboard_p = sub.add_parser(
+        "dashboard",
+        help="Start the local page and the local JSON API on 127.0.0.1",
+    )
+    dashboard_p.add_argument(
+        "--api-port", type=int, default=8765, help="API port (default: 8765)"
+    )
+    dashboard_p.add_argument(
+        "--page-port", type=int, default=8766, help="Page port (default: 8766)"
+    )
+
     return parser
 
 
@@ -351,9 +363,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_service_cmd(lambda: service.restore(args.path))
     if args.cmd == "manual":
         return _run_service_cmd(lambda: _call_manual(args))
+    if args.cmd == "dashboard":
+        return _run_dashboard(args.api_port, args.page_port)
 
     parser.error(f"unknown command: {args.cmd}")
     return 2
+
+
+def _run_dashboard(api_port: int, page_port: int) -> int:
+    """Start the page and the API. Import the launcher only for this command."""
+    from canhoto.dashboard import launch
+
+    try:
+        launch(api_port=api_port, page_port=page_port)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    return 0
 
 
 def _call_config(args: argparse.Namespace) -> dict[str, Any]:

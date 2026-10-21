@@ -408,6 +408,8 @@ def test_service_rule_lifecycle(data_home: Path) -> None:
     assert listed["count"] == 1
     assert listed["rules"][0]["note"] == "company pay"
     assert listed["rules"][0]["min_amount_minor"] == 120000
+    assert listed["rules"][0]["min_amount"] == "1200.00"
+    assert listed["rules"][0]["max_amount"] == "1300.00"
     assert service.rule_remove(rule_id)["removed"] is True
     assert service.rule_list()["count"] == 0
 

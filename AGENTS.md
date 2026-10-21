@@ -10,6 +10,8 @@ Read this before editing code.
 | Package / import | `canhoto` |
 | CLI | `canhoto` |
 | MCP | `canhoto-mcp` |
+| API | `canhoto-api` |
+| Page | `canhoto-page` |
 | Data | `~/.canhoto` / `$CANHOTO_DATA_DIR` |
 | DB | `canhoto.db` |
 
@@ -24,13 +26,17 @@ src/canhoto/
   parsers/        # Protocol, loader, scaffold (no bank logic)
   exporters/      # pdf_summary
   mcp/            # allowlist + Fast/MCP server → service only
-  service.py      # façade for CLI + MCP
+  api/            # loopback JSON → service only
+  page/           # loopback static page; HTTP client of the API
+  service.py      # façade for CLI, MCP, and API
   cli.py
+  dashboard.py    # starts the API process side and the page side
 examples/parsers/ # docs-only demo (not auto-loaded)
 tests/guardrails/ # privacy/allowlist contracts
 ```
 
-Dependency direction: `cli` / `mcp` → `service` → `core` + ports.
+Dependency direction: `cli` / `mcp` / `api` → `service` → `core` + ports.
+`page` does not import `service`, `api`, or `core`. `dashboard` only starts the two servers.
 
 ## Hard rules
 
@@ -65,6 +71,7 @@ $CANHOTO_DATA_DIR or ~/.canhoto/
   exports/
   raw/
   fixtures/
+  inbox/
 ```
 
 ## Commands
@@ -76,6 +83,7 @@ uv run ruff check src/canhoto tests
 uv run mypy -p canhoto
 uv run canhoto --help
 uv run canhoto-mcp   # stdio; host-spawned
+uv run canhoto dashboard  # page :8766 and API :8765, loopback only
 ```
 
 ## Quality bar
